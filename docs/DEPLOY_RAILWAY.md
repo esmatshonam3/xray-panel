@@ -41,15 +41,33 @@ python -c "import secrets; print('WEBHOOK_SECRET=', secrets.token_hex(32))"
 
 ## بخش ۳ — سرویس پنل
 
+> ### ⚠️ قبل از هر چیز: Root Directory را تنظیم کنید
+>
+> این مخزن یک **monorepo** است و اپ در ریشه نیست. اگر Root Directory را تنظیم
+> نکنید، Railway با **Railpack** تلاش می‌کند از ریشه بیلد کند و با این خطا
+> شکست می‌خورد:
+>
+> ```
+> ⚠ Script start.sh not found
+> ✖ Railpack could not determine how to build the app.
+> ```
+>
+> این خطا به‌معنای «کد خراب است» نیست؛ فقط یعنی Railpack در ریشه هیچ
+> `requirements.txt` یا `package.json` پیدا نکرده. **راه‌حل در قدم ۲ آمده است.**
+
 ### ۳.۱ ساخت سرویس
 
 1. **New → GitHub Repo** → مخزن خود را انتخاب کنید.
-2. سرویس ساخته‌شده را باز کنید → **Settings**:
-   * **Root Directory** را روی `panel` بگذارید. (این کار باعث می‌شود
-     `panel/railway.toml` و `panel/Dockerfile` به‌درستی پیدا شوند.)
-   * **Networking → Public Networking → Generate Domain** را بزنید.
-3. Railway به‌طور خودکار `railway.toml` را می‌خواند: بیلد با Dockerfile،
-   healthcheck روی `/api/v1/health/live`، و دستور اجرا `bash entrypoint.sh`.
+2. سرویس ساخته‌شده را باز کنید → **Settings → Source**:
+   * **Root Directory** را روی `panel` بگذارید. **این قدم اجباری است.**
+     بدون آن، بیلد با خطای Railpack شکست می‌خورد (بالا را ببینید).
+     با تنظیم آن، بیلد از `panel/Dockerfile` استفاده می‌کند و Railpack کاملاً
+     دور زده می‌شود.
+   * اگر Railway از قبل یک دیپلوی ناموفق ساخته، بعد از تغییر Root Directory
+     روی **Redeploy** بزنید.
+3. **Settings → Networking → Public Networking → Generate Domain** را بزنید.
+4. Railway فایل `panel/railway.toml` را می‌خواند (بیلد با Dockerfile،
+   healthcheck روی `/api/v1/health/live`، دستور اجرا `bash entrypoint.sh`).
 
 ### ۳.۲ متغیرهای محیطی
 
@@ -246,7 +264,10 @@ uvicorn app.main:app --reload --port 8000
 |---|---|
 | دیپلوی روی `init-db` می‌ماند | `DATABASE_URL` درست ست نشده یا Postgres آماده نیست |
 | Healthcheck رد می‌شود | باید `/api/v1/health/live` در ۱۲۰ ثانیه ۲۰۰ بدهد؛ کندی دیتابیس باعث رد شدن می‌شود |
-| خطای `Root Directory` | مطمئن شوید برای سرویس پنل `panel` و برای نود `node-agent` ست شده |
+| `Railpack could not determine how to build the app` | **Root Directory ست نشده.** Settings → Source → Root Directory = `panel` (پنل) یا `node-agent` (نود). سپس Redeploy. |
+| `Script start.sh not found` | همان مورد بالا؛ Railpack به‌جای Dockerfile تلاش کرده از ریشه بیلد کند. |
+| بیلد با `pip install` روی ریشه شروع می‌شود | Root Directory روی `/` مانده. آن را به `panel` تغییر دهید. |
+| خطای `COPY failed: requirements.txt not found` | Root Directory روی `/` است ولی `dockerfilePath` به `panel/Dockerfile` اشاره می‌کند؛ بافت بیلد با مسیرهای داخل Dockerfile نمی‌خواند. Root Directory را `panel` بگذارید. |
 | نود `offline` است | آدرس ایجنت در دسترس نیست یا توکن فرق دارد؛ `curl http://<node>.railway.internal:8081/health` |
 | نود `degraded` است | یک یا دو شکست متوالی؛ فیلد `last_error` کارت نود را ببینید |
 | هنگام ساخت کانفیگ خطای `502` | ایجنت درخواست را رد کرده؛ `last_error` را بخوانید و بعد `/nodes/{id}/sync` بزنید |

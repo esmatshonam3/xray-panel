@@ -1,6 +1,22 @@
 # =============================================================================
 #  Railway — سرویس پنل (Control Plane)
-#  در Railway این سرویس را بسازید و Root Directory آن را روی «panel» بگذارید.
+#
+#  ⚠️  مهم: این فایل فقط وقتی خوانده می‌شود که Root Directory سرویس روی
+#      «panel» تنظیم شده باشد.
+#
+#      Settings → Source → Root Directory = panel
+#
+#      اگر Root Directory روی «/» (ریشه‌ی مخزن) بماند، Railway این فایل را
+#      نمی‌بیند، با Railpack از ریشه بیلد می‌کند و با این خطا شکست می‌خورد:
+#
+#          ⚠ Script start.sh not found
+#          ✖ Railpack could not determine how to build the app.
+#
+#      چون مخزن یک monorepo است و هیچ requirements.txt یا package.json
+#      در ریشه وجود ندارد.
+#
+#  ⚠️  Config as Code منسوخ شده است و تا ۲۰۲۶-۱۲-۰۱ کار می‌کند.
+#      برای مسیر آینده فایل .railway/railway.ts را ببینید.
 # =============================================================================
 
 [build]

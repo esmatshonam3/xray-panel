@@ -1,6 +1,13 @@
 # =============================================================================
 #  Railway — سرویس نود (Data Plane / Xray)
-#  Root Directory این سرویس را روی «node-agent» بگذارید.
+#
+#  ⚠️  مهم: این فایل فقط وقتی خوانده می‌شود که Root Directory سرویس روی
+#      «node-agent» تنظیم شده باشد.
+#
+#      Settings → Source → Root Directory = node-agent
+#
+#      اگر روی «/» بماند، Railway با Railpack از ریشه بیلد می‌کند و شکست
+#      می‌خورد (همان خطای «Railpack could not determine how to build the app»).
 #
 #  برای انتشار پورت خام Xray:
 #    Settings → Networking → TCP Proxy → پورت 443 (یا هر پورتی که در اینباند
@@ -11,6 +18,8 @@
 #    * TCP Proxy فقط TCP است؛ QUIC/KCP (UDP) روی Railway کار نمی‌کند.
 #    * ترافیک مصرفی از سهمیه‌ی پلن Railway کم می‌شود.
 #    * برای ترافیک سنگین، VPS اختصاصی به‌صرفه‌تر است.
+#
+#  ⚠️  Config as Code منسوخ شده است؛ برای مسیر آینده .railway/railway.ts.
 # =============================================================================
 
 [build]

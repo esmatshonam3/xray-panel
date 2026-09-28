@@ -153,6 +153,7 @@ xray-panel/
 │   ├── DEPLOY_RENDER.md        راهنمای استقرار روی Render
 │   ├── SECURITY_AND_BACKUP.md  امنیت، پشتیبان‌گیری، runbook
 │   └── TELEGRAM_BOT.md         مستندات ربات
+├── .railway/                   Infrastructure as Code ریلوی (اختیاری، آینده‌نگر)
 ├── docker-compose.yml          پشته‌ی کامل محلی
 ├── render.yaml                 Blueprint رندر
 └── .env.example
@@ -227,13 +228,32 @@ python -m app.cli check
 | Render | [`docs/DEPLOY_RENDER.md`](docs/DEPLOY_RENDER.md) |
 | VPS / Docker | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) + `docker-compose.yml` |
 
+> ### ⚠️ Railway: اول Root Directory را تنظیم کنید
+>
+> این مخزن یک **monorepo** است و اپ در ریشه نیست. اگر Root Directory سرویس را
+> تنظیم نکنید، Railway با **Railpack** از ریشه بیلد می‌کند و شکست می‌خورد:
+>
+> ```
+> ⚠ Script start.sh not found
+> ✖ Railpack could not determine how to build the app.
+> ```
+>
+> **راه‌حل:** `Settings → Source → Root Directory`
+>
+> | سرویس | Root Directory |
+> |---|---|
+> | پنل | `panel` |
+> | نود | `node-agent` |
+>
+> بعد از تغییر، **Redeploy** بزنید.
+
 خلاصه‌ی Railway:
 
 1. **Postgres** را به‌عنوان پلاگین اضافه کنید.
-2. سرویس **panel** را از مخزن بسازید، Root Directory = `panel`.
+2. سرویس **panel** را از مخزن بسازید و **Root Directory = `panel`** بگذارید.
    `DATABASE_URL=${{Postgres.DATABASE_URL}}` و بقیه‌ی متغیرها را ست کنید.
-3. سرویس **node-agent** را بسازید، Root Directory = `node-agent`، یک
-   **TCP Proxy** روی پورت اینباند (مثلاً 443) بسازید و یک Volume روی `/etc/xray`.
+3. سرویس **node-agent** را بسازید و **Root Directory = `node-agent`** بگذارید،
+   یک **TCP Proxy** روی پورت اینباند (مثلاً 443) بسازید و یک Volume روی `/etc/xray`.
 4. در پنل، نود را با آدرس `http://<node>.railway.internal:8081` و همان
    `NODE_TOKEN` ثبت کنید.
 5. اینباند بسازید و `POST /api/v1/nodes/{id}/sync` را بزنید.
