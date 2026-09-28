@@ -1,0 +1,40 @@
+# =============================================================================
+#  Line-ending policy
+#
+#  The Docker entrypoints are executed with `bash` inside a Linux container.
+#  A CRLF `entrypoint.sh` fails there with "exec format error" / "$'\r': command
+#  not found" - a classic Windows-authored repo that breaks on deploy. These
+#  rules keep every text file LF in the repository and in the working tree.
+# =============================================================================
+
+* text=auto eol=lf
+
+# Shell scripts must be LF, always.
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+Makefile    text eol=lf
+
+# Windows-only helpers keep their native endings if they ever appear.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary assets - never touch these.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.gz        binary
+*.zip       binary
+*.woff      binary
+*.woff2     binary
+
+# Linguist: keep the repository statistics honest.
+panel/app/static/*.js   linguist-vendored=false
+docs/*                  linguist-documentation

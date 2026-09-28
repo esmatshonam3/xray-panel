@@ -1,0 +1,37 @@
+# =============================================================================
+#  Railway — سرویس پنل (Control Plane)
+#  در Railway این سرویس را بسازید و Root Directory آن را روی «panel» بگذارید.
+# =============================================================================
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["app/**", "requirements.txt", "Dockerfile", "entrypoint.sh"]
+
+[deploy]
+# healthcheck باید ۲۰۰ برگرداند وگرنه Railway دیپلوی را رد می‌کند
+healthcheckPath = "/api/v1/health/live"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+startCommand = "bash entrypoint.sh"
+
+# -----------------------------------------------------------------------------
+#  متغیرهای محیطی موردنیاز (در تب Variables سرویس تنظیم کنید)
+#
+#  DATABASE_URL            = ${{Postgres.DATABASE_URL}}        ← از پلاگین Postgres
+#  PANEL_BASE_URL          = https://${{RAILWAY_PUBLIC_DOMAIN}}
+#  CORS_ORIGINS            = https://${{RAILWAY_PUBLIC_DOMAIN}}
+#  SECRET_KEY              = <64 کاراکتر تصادفی>
+#  ENCRYPTION_KEY          = <کلید Fernet>
+#  SUPERADMIN_PASSWORD     = <رمز قوی>
+#  TELEGRAM_BOT_TOKEN      = <از BotFather>
+#  TELEGRAM_BOT_USERNAME   = <نام ربات بدون @>
+#  TELEGRAM_WEBHOOK_SECRET = <رشته تصادفی>
+#  TELEGRAM_ADMIN_IDS      = <آیدی عددی ادمین‌ها، جدا شده با کاما>
+#  ENABLE_SCHEDULER        = true
+#  WEB_CONCURRENCY         = 1
+#
+#  نکته: Railway فقط HTTP/HTTPS را روی $PORT منتشر می‌کند؛ اینباندهای Xray
+#  (که به TCP/UDP خام نیاز دارند) باید روی سرویس node-agent جداگانه اجرا شوند.
+# -----------------------------------------------------------------------------

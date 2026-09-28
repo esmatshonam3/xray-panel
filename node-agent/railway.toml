@@ -1,0 +1,39 @@
+# =============================================================================
+#  Railway — سرویس نود (Data Plane / Xray)
+#  Root Directory این سرویس را روی «node-agent» بگذارید.
+#
+#  برای انتشار پورت خام Xray:
+#    Settings → Networking → TCP Proxy → پورت 443 (یا هر پورتی که در اینباند
+#    تعریف کرده‌اید) را expose کنید. Railway یک دامنه:پورت عمومی می‌دهد که
+#    همان را در فیلد public_host / public_port اینباند در پنل وارد می‌کنید.
+#
+#  محدودیت‌ها:
+#    * TCP Proxy فقط TCP است؛ QUIC/KCP (UDP) روی Railway کار نمی‌کند.
+#    * ترافیک مصرفی از سهمیه‌ی پلن Railway کم می‌شود.
+#    * برای ترافیک سنگین، VPS اختصاصی به‌صرفه‌تر است.
+# =============================================================================
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["agent/**", "requirements.txt", "Dockerfile", "entrypoint.sh"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+
+# -----------------------------------------------------------------------------
+#  متغیرهای محیطی:
+#    NODE_TOKEN        = <همان توکنی که در پنل هنگام افزودن نود وارد می‌کنید>
+#    NODE_NAME         = railway-node-1
+#    PUBLIC_HOST       = <دامنه TCP Proxy یا دامنه‌ی نود>
+#    AGENT_PORT        = 8081
+#    XRAY_API_PORT     = 10085
+#    ALLOW_INSECURE_SIGNATURE = false
+#
+#  توصیه امنیتی: پورت agent (8081) را از طریق TCP Proxy عمومی نکنید؛ فقط
+#  پورت اینباند Xray را expose کنید و agent را از شبکه‌ی خصوصی Railway
+#  (http://<service>.railway.internal:8081) صدا بزنید.
+# -----------------------------------------------------------------------------

@@ -1,0 +1,73 @@
+# =============================================================================
+#  Local / self-hosted stack:  panel + postgres + one Xray node agent
+#  Usage:  docker compose up -d --build
+# =============================================================================
+name: xray-panel
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: xpanel
+      POSTGRES_USER: xpanel
+      POSTGRES_PASSWORD: xpanel_dev_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xpanel -d xpanel"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [panel]
+
+  panel:
+    build:
+      context: ./panel
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://xpanel:xpanel_dev_password@db:5432/xpanel
+      SECRET_KEY: dev-secret-change-me-please-0000000000000000000000000000
+      SUPERADMIN_PASSWORD: admin12345
+      PANEL_BASE_URL: http://localhost:8000
+      ENVIRONMENT: development
+      DEBUG: "true"
+      CORS_ORIGINS: "*"
+      ENABLE_SCHEDULER: "true"
+      TELEGRAM_ENABLED: "false"
+      BACKUP_ENABLED: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - paneldata:/app/data
+    networks: [panel]
+
+  node:
+    build:
+      context: ./node-agent
+    restart: unless-stopped
+    environment:
+      NODE_TOKEN: dev-node-token-change-me
+      XRAY_INBOUND_PORT: "443"
+      XRAY_API_PORT: "10085"
+      NODE_NAME: local-node-1
+      NODE_PUBLIC_HOST: 127.0.0.1
+    ports:
+      - "8081:8081"   # agent API (put behind TLS in production)
+      - "443:443"     # Xray inbound
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - xrayconf:/etc/xray
+    networks: [panel]
+
+volumes:
+  pgdata:
+  paneldata:
+  xrayconf:
+
+networks:
+  panel:

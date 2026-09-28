@@ -1,0 +1,119 @@
+# =============================================================================
+#  Render Blueprint - Control Plane (panel API + web UI + Telegram bot)
+#
+#  IMPORTANT ARCHITECTURE NOTE
+#  ---------------------------
+#  Render only exposes HTTP(S) traffic on $PORT. It CANNOT expose the raw
+#  TCP/UDP ports that Xray inbounds need, so the Xray data plane must run on
+#  separate VPS nodes using the `node-agent` image shipped in this repository.
+#  Render hosts: panel API + admin UI + Telegram bot + Postgres + cron backups.
+# =============================================================================
+
+databases:
+  - name: xpanel-db
+    databaseName: xpanel
+    user: xpanel
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"
+
+services:
+  # ---------------------------------------------------------------- panel ----
+  - type: web
+    name: xray-panel
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./panel/Dockerfile
+    dockerContext: ./panel
+    healthCheckPath: /api/v1/health/live
+    autoDeploy: true
+    disk:
+      name: xpanel-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: SUPERADMIN_PASSWORD
+        sync: false
+      - key: PANEL_BASE_URL
+        fromService:
+          type: web
+          name: xray-panel
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: DATABASE_URL
+        fromDatabase:
+          name: xpanel-db
+          property: connectionString
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        generateValue: true
+      - key: TELEGRAM_ADMIN_IDS
+        sync: false
+      - key: TELEGRAM_AUTO_SET_WEBHOOK
+        value: "true"
+      - key: ENABLE_SCHEDULER
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: BACKUP_ENABLED
+        value: "true"
+      - key: CORS_ORIGINS
+        fromService:
+          type: web
+          name: xray-panel
+          envVarKey: RENDER_EXTERNAL_URL
+
+  # --------------------------------------------------- cron: daily backup ----
+  - type: cron
+    name: xray-panel-backup
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    schedule: "0 3 * * *"
+    dockerfilePath: ./panel/Dockerfile
+    dockerContext: ./panel
+    dockerCommand: python -m app.workers.scheduler --once backup
+    envVars:
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: xray-panel
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: xpanel-db
+          property: connectionString
+      - key: ENABLE_SCHEDULER
+        value: "false"
+
+  # -------------------------------------------- cron: quota + expiry sweep --
+  - type: cron
+    name: xray-panel-sweep
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    schedule: "*/15 * * * *"
+    dockerfilePath: ./panel/Dockerfile
+    dockerContext: ./panel
+    dockerCommand: python -m app.workers.scheduler --once sweep
+    envVars:
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: xray-panel
+          envVarKey: SECRET_KEY
+      - key: DATABASE_URL
+        fromDatabase:
+          name: xpanel-db
+          property: connectionString
+      - key: ENABLE_SCHEDULER
+        value: "false"
