@@ -33,7 +33,8 @@ def _qs(params: dict[str, Any]) -> str:
 def _transport_params(inbound: Inbound) -> dict[str, Any]:
     params: dict[str, Any] = {"type": inbound.transport.value}
     if inbound.transport == Transport.ws:
-        params["path"] = inbound.path or "/"
+        path = inbound.path or "/"
+        params["path"] = f"/ws{path}" if _railway_ws_tls(inbound) else path
         if inbound.host_header:
             params["host"] = inbound.host_header
     elif inbound.transport == Transport.grpc:

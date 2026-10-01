@@ -86,7 +86,7 @@ def test_vless_ws_tls_link(make_service):
     link = build_link(service)
     assert "type=ws" in link
     assert "security=tls" in link
-    assert "path=%2Fws" in link
+    assert "path=%2Fws%2Fws" in link
     assert "host=cdn.example.com" in link
 
 

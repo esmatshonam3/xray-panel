@@ -120,15 +120,16 @@ def ping() -> dict[str, str]:
     return {"pong": settings.node_name}
 
 
-@public.websocket("/{path:path}")
+@public.websocket("/ws/{path:path}")
 async def railway_websocket_bridge(websocket: WebSocket):
     """Bridge Railway's public HTTPS/WebSocket listener to a local Xray WS inbound.
 
     Railway's HTTP domain terminates TLS and forwards WebSockets to AGENT_PORT.
-    The local Xray inbound stays plain WS on its private container port, so no
-    Railway TCP proxy or publicly exposed raw port is needed for this mode.
+    Requests use a dedicated /ws prefix and are mapped back to the configured
+    Xray path. The local inbound stays plain WS on its private container port,
+    so no Railway TCP proxy or publicly exposed raw port is needed for this mode.
     """
-    request_path = "/" + websocket.url.path.lstrip("/")
+    request_path = "/" + websocket.path_params["path"].lstrip("/")
     spec = next(
         (
             item for item in manager.state.get("inbounds", [])
