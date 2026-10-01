@@ -28,7 +28,9 @@ RUN set -eux; \
 
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN apk add --no-cache --virtual .build-deps build-base python3-dev linux-headers \
+ && pip3 install --no-cache-dir --break-system-packages -r requirements.txt \
+ && apk del .build-deps
 
 COPY agent ./agent
 COPY entrypoint.sh /entrypoint.sh
