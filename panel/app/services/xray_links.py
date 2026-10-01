@@ -56,6 +56,13 @@ def _transport_params(inbound: Inbound) -> dict[str, Any]:
 
 
 def _security_params(inbound: Inbound) -> dict[str, Any]:
+    # Railway's public HTTP domain supports WSS, while Xray behind the
+    # node-agent bridge only sees plain WS. Advertise the edge TLS settings to
+    # clients without asking the private Xray inbound to load certificates.
+    if _railway_ws_tls(inbound):
+        params: dict[str, Any] = {"security": "tls", "sni": inbound.display_host, "alpn": ["http/1.1"]}
+        return params
+
     params: dict[str, Any] = {"security": inbound.security.value}
     if inbound.security == Security.tls:
         params["sni"] = inbound.sni or inbound.display_host
@@ -72,6 +79,8 @@ def _security_params(inbound: Inbound) -> dict[str, Any]:
         params["fp"] = inbound.fingerprint or "chrome"
         params["spx"] = inbound.reality_spider_x or "/"
         params["flow"] = inbound.flow or "xtls-rprx-vision"
+    elif inbound.transport == Transport.ws and inbound.host_header:
+        params["sni"] = inbound.host_header
     return params
 
 
@@ -82,6 +91,16 @@ def _remark(inbound: Inbound, service: Service) -> str:
     if inbound.node and inbound.node.region:
         parts.append(inbound.node.region)
     return " | ".join(parts)
+
+
+def _railway_ws_tls(inbound: Inbound) -> bool:
+    return (
+        inbound.node.name.startswith("railway")
+        and inbound.transport == Transport.ws
+        and inbound.security == Security.none
+        and inbound.display_port == 443
+        and bool((inbound.extra or {}).get("railway_ws_tls"))
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -233,10 +252,10 @@ def build_clash_yaml(services: list[Service]) -> str:
                 opts = {"grpc-service-name": inbound.service_name or "grpc"}
             proxy[inbound.transport.value + "-opts"] = opts
 
-        if inbound.security == Security.tls:
+        if inbound.security == Security.tls or _railway_ws_tls(inbound):
             proxy["tls"] = True
             proxy["servername"] = inbound.sni or inbound.display_host
-            if inbound.alpn:
+            if inbound.alpn and not _railway_ws_tls(inbound):
                 proxy["alpn"] = list(inbound.alpn)
         elif inbound.security == Security.reality:
             proxy["tls"] = True

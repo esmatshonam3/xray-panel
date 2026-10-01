@@ -312,6 +312,7 @@ class InboundCreate(InboundBase):
 class InboundUpdate(BaseModel):
     remark: Optional[str] = None
     port: Optional[int] = Field(default=None, ge=1, le=65535)
+    transport: Optional[Transport] = None
     security: Optional[Security] = None
     sni: Optional[str] = None
     alpn: Optional[list[str]] = None

@@ -5,3 +5,4 @@ pydantic-settings==2.7.0
 psutil==6.1.1
 httpx==0.28.1
 orjson==3.10.13
+websockets==13.1

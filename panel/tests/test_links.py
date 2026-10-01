@@ -90,6 +90,22 @@ def test_vless_ws_tls_link(make_service):
     assert "host=cdn.example.com" in link
 
 
+def test_railway_public_domain_ws_uses_edge_tls(make_service, db, node):
+    service = make_service(Protocol.vless, Transport.ws, Security.none, tag="railway-ws")
+    service.inbound.node.name = "railway-xray"
+    service.inbound.public_host = "node-agent-production.up.railway.app"
+    service.inbound.public_port = 443
+    service.inbound.extra = {"railway_ws_tls": True}
+
+    link = build_link(service)
+    assert "@node-agent-production.up.railway.app:443" in link
+    assert "type=ws" in link
+    assert "security=tls" in link
+    assert "sni=node-agent-production.up.railway.app" in link
+    assert "alpn=http%2F1.1" in link
+    assert "path=%2Fws" in link
+
+
 def test_vmess_link_is_base64_json(make_service):
     service = make_service(Protocol.vmess, Transport.ws, Security.tls)
     link = build_link(service)

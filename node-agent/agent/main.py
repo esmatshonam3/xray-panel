@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, WebSocket, status
 from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel, Field
+from websockets.legacy.client import connect as websocket_connect
 
 from agent import system, xray_api
 from agent.config import settings
@@ -116,6 +118,75 @@ def health() -> dict[str, Any]:
 @public.get("/ping")
 def ping() -> dict[str, str]:
     return {"pong": settings.node_name}
+
+
+@public.websocket("/{path:path}")
+async def railway_websocket_bridge(websocket: WebSocket):
+    """Bridge Railway's public HTTPS/WebSocket listener to a local Xray WS inbound.
+
+    Railway's HTTP domain terminates TLS and forwards WebSockets to AGENT_PORT.
+    The local Xray inbound stays plain WS on its private container port, so no
+    Railway TCP proxy or publicly exposed raw port is needed for this mode.
+    """
+    request_path = "/" + websocket.url.path.lstrip("/")
+    spec = next(
+        (
+            item for item in manager.state.get("inbounds", [])
+            if item.get("transport") == "ws"
+            and (item.get("path") or "/") == request_path
+            and item.get("security", "none") == "none"
+        ),
+        None,
+    )
+    if spec is None:
+        await websocket.close(code=1008, reason="unknown WebSocket inbound")
+        return
+
+    upstream_url = f"ws://127.0.0.1:{int(spec['port'])}{request_path}"
+    try:
+        async with websocket_connect(
+            upstream_url,
+            max_size=None,
+            max_queue=None,
+            ping_interval=None,
+            open_timeout=8,
+        ) as upstream:
+            await websocket.accept()
+            async def client_to_xray() -> None:
+                while True:
+                    frame = await websocket.receive()
+                    if frame["type"] == "websocket.disconnect":
+                        return
+                    if frame.get("bytes") is not None:
+                        await upstream.send(frame["bytes"])
+                    elif frame.get("text") is not None:
+                        await upstream.send(frame["text"])
+
+            async def xray_to_client() -> None:
+                async for frame in upstream:
+                    if isinstance(frame, bytes):
+                        await websocket.send_bytes(frame)
+                    else:
+                        await websocket.send_text(frame)
+
+            tasks = [
+                asyncio.create_task(client_to_xray()),
+                asyncio.create_task(xray_to_client()),
+            ]
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            for task in done:
+                error = task.exception() if not task.cancelled() else None
+                if error:
+                    raise error
+    except Exception as exc:
+        log.debug("WebSocket bridge closed for %s: %s", request_path, exc)
+        try:
+            await websocket.close(code=1011, reason="upstream unavailable")
+        except Exception:
+            pass
 
 
 # --------------------------------------------------------------------------- #

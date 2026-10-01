@@ -301,9 +301,12 @@ def create_inbound(payload: InboundCreate, db: DbSession, actor: AdminUser) -> I
         # Railway's TCP proxy listens on an externally allocated port and
         # forwards to the container's target port (the Xray inbound port).
         # Do not replace the internal listen port with the proxy port.
-        data["public_port"] = payload.public_port or settings.railway_tcp_proxy_port or payload.port
+        railway_ws_tls = payload.transport.value == "ws" and (payload.public_port or 443) == 443
+        data["public_port"] = payload.public_port or (443 if railway_ws_tls else settings.railway_tcp_proxy_port or payload.port)
         data["port"] = payload.port
         data["public_host"] = payload.public_host or settings.railway_tcp_proxy_domain or node.public_host
+        if railway_ws_tls and (data["public_host"] or "").lower().endswith(".up.railway.app"):
+            data["extra"] = {**(data.get("extra") or {}), "railway_ws_tls": True}
     inbound = Inbound(**data)
     if payload.reality_private_key:
         inbound.reality_private_key = payload.reality_private_key
@@ -326,11 +329,21 @@ def update_inbound(inbound_id: int, payload: InboundUpdate, db: DbSession, actor
     for key, value in data.items():
         if value is not None:
             setattr(inbound, key, value)
+    if inbound.node.name == "railway-xray":
+        host = (inbound.public_host or inbound.node.public_host or "").lower()
+        extra = dict(inbound.extra or {})
+        if inbound.transport == Transport.ws and inbound.public_port == 443 and host.endswith(".up.railway.app"):
+            extra["railway_ws_tls"] = True
+        else:
+            extra.pop("railway_ws_tls", None)
+        inbound.extra = extra
     if private_key:
         inbound.reality_private_key = private_key
     audit(db, action="inbound.update", actor_id=actor.id, entity_type="inbound", entity_id=inbound.id, meta={"fields": list(data)})
     db.commit()
     ok, detail = sync_inbound(db, inbound, actor_id=actor.id)
+    if not ok:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Inbound updated but Xray sync failed: {detail}")
     return InboundOut.model_validate(
         {**{c: getattr(inbound, c) for c in InboundOut.model_fields if hasattr(inbound, c)}, "service_count": len(inbound.services)}
     )

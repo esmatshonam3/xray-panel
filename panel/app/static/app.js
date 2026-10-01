@@ -1110,6 +1110,7 @@
           <td>${num(i.service_count)}</td>
           <td>${i.is_active ? badge('active') : badge('disabled')}</td>
           <td><div class="cell-actions">
+            <button class="btn sm" data-iact="edit" data-id="${i.id}" title="Edit inbound">${window.icon('edit', { size: 14 })}</button>
             <button class="btn sm" data-iact="validate" data-id="${i.id}">${window.icon('shield', { size: 14 })}</button>
             <button class="btn sm" data-iact="sync" data-id="${i.id}">${window.icon('refresh', { size: 14 })}</button>
           </div></td>
@@ -1119,7 +1120,11 @@
     $$('#inb-table [data-iact]').forEach((btn) => {
       btn.onclick = async () => {
         try {
-          if (btn.dataset.iact === 'validate') {
+          if (btn.dataset.iact === 'edit') {
+            const item = rows.find((row) => row.id === Number(btn.dataset.id));
+            if (!item) return;
+            inboundEditDialog(item);
+          } else if (btn.dataset.iact === 'validate') {
             const r = await api(`/inbounds/${btn.dataset.id}/validate`);
             openModal(t('inbounds.validationTitle'), `
               <p>${r.ok ? badge('ok') : badge('failed')}</p>
@@ -1137,6 +1142,42 @@
     });
   };
 
+  function inboundEditDialog(item) {
+    openModal(`Edit inbound · ${esc(item.tag)}`, `
+      <div class="field-row">
+        <div><label class="field">Internal Xray port</label><input id="ie-port" type="number" value="${num(item.port)}"></div>
+        <div><label class="field">Transport</label><select id="ie-net">
+          ${['tcp','ws','grpc','httpupgrade','xhttp'].map((x) => `<option ${item.transport === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+        <div><label class="field">Xray security</label><select id="ie-sec">
+          ${['none','tls','reality'].map((x) => `<option ${item.security === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+        <div><label class="field">Path / serviceName</label><input id="ie-path" value="${esc(item.path || '')}"></div>
+        <div><label class="field">Public host override</label><input id="ie-host" value="${esc(item.public_host || '')}" placeholder="node-agent-….up.railway.app"></div>
+        <div><label class="field">Public port override</label><input id="ie-public-port" type="number" value="${num(item.public_port || item.port)}"></div>
+        <div><label class="field">WebSocket host header</label><input id="ie-host-header" value="${esc(item.host_header || '')}"></div>
+        <div><label class="field">SNI (direct TLS only)</label><input id="ie-sni" value="${esc(item.sni || '')}"></div>
+      </div>
+      <p style="color:var(--text-mute);font-size:12px;margin-block-start:12px">For Railway HTTP-domain WebSocket mode, use transport WS, Xray security none, public port 443, and the node-agent Railway domain.</p>`, [
+      { label: t('common.cancel'), onClick: closeModal },
+      { label: t('common.save'), kind: 'primary', icon: 'check', onClick: async (button) => {
+        button.classList.add('loading');
+        const body = {
+          port: Number($('#ie-port').value),
+          transport: $('#ie-net').value,
+          security: $('#ie-sec').value,
+          path: $('#ie-path').value || '/',
+          public_host: $('#ie-host').value.trim() || null,
+          public_port: Number($('#ie-public-port').value) || null,
+          host_header: $('#ie-host-header').value.trim() || null,
+          sni: $('#ie-sni').value.trim() || null,
+        };
+        try {
+          const result = await api(`/inbounds/${item.id}`, { method: 'PATCH', body });
+          closeModal(); toast(result.sync_error || 'Inbound saved and synced', result.sync_error ? 'err' : 'ok'); Pages.inbounds();
+        } catch (err) { toast(err.message, 'err'); button.classList.remove('loading'); }
+      } },
+    ]);
+  }
+
   function inboundCreateDialog() {
     openModal(t('inbounds.createTitle'), `
       <div class="field-row">
@@ -1151,6 +1192,8 @@
           <option>none</option><option>tls</option><option>reality</option></select></div>
         <div><label class="field">SNI</label><input id="ni-sni"></div>
         <div><label class="field">Path / serviceName</label><input id="ni-path"></div>
+        <div><label class="field">Public host override</label><input id="ni-host" placeholder="node-agent-….up.railway.app"></div>
+        <div><label class="field">Public port override</label><input id="ni-public-port" type="number" placeholder="443"></div>
         <div><label class="field">Flow</label><input id="ni-flow" placeholder="xtls-rprx-vision"></div>
         <div><label class="field">Reality public key</label><input id="ni-pbk"></div>
         <div><label class="field">Reality private key</label><input id="ni-pvk"></div>
@@ -1172,6 +1215,8 @@
               port: Number($('#ni-port').value),
               transport: net,
               security: $('#ni-sec').value,
+              public_host: $('#ni-host').value.trim() || null,
+              public_port: Number($('#ni-public-port').value) || null,
               sni: $('#ni-sni').value || null,
               flow: $('#ni-flow').value || null,
               reality_public_key: $('#ni-pbk').value || null,
