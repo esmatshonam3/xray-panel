@@ -75,7 +75,18 @@ class XrayManager:
 
     # --------------------------------------------------------------- rendering
     def render_config(self) -> dict[str, Any]:
-        inbounds: list[dict[str, Any]] = []
+        # Xray's API services need a local dokodemo-door inbound routed back
+        # to the API outbound. Without this listener the `xray api` CLI cannot
+        # reach HandlerService/StatsService on the configured api_server.
+        inbounds: list[dict[str, Any]] = [
+            {
+                "tag": "api",
+                "listen": settings.xray_api_host,
+                "port": settings.xray_api_port,
+                "protocol": "dokodemo-door",
+                "settings": {"address": "127.0.0.1"},
+            }
+        ]
         for spec in self._state.get("inbounds", []):
             inbound = self._render_inbound(spec, self._state.get("users", {}).get(spec["tag"], []))
             if inbound:
@@ -100,6 +111,7 @@ class XrayManager:
             },
             "inbounds": inbounds,
             "outbounds": [
+                {"protocol": "freedom", "tag": "api"},
                 {"protocol": "freedom", "tag": "direct"},
                 {"protocol": "blackhole", "tag": "block"},
             ],
