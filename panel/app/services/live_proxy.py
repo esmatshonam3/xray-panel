@@ -368,28 +368,20 @@ def ensure_default_relay_endpoint(db) -> None:
         inbound.public_host = settings.live_proxy_host or None
         inbound.public_port = 443
         db.flush()
+    # Earlier rollout may already have moved services to the virtual node
+    # while leaving them attached to an older WS inbound. Normalize all
+    # persisted VLESS services into the single live endpoint on every boot.
+    from app.db.models import Plan
+    for service in db.execute(select(Service).where(Service.protocol == Protocol.vless)).scalars():
+        if service.inbound_id != inbound.id or service.node_id != node.id:
+            service.inbound_id = inbound.id
+            service.node_id = node.id
+        service.flow = None
+        service.is_synced = True
+        service.sync_error = None
+        service.last_synced_at = utcnow()
     # Preserve existing customer IDs/subscription tokens while switching
     # eligible services to the new in-process VLESS/WS endpoint.
-    old_nodes = list(db.execute(select(Node).where(Node.id != node.id)).scalars())
-    for old_node in old_nodes:
-        old_inbounds = list(
-            db.execute(
-                select(Inbound).where(
-                    Inbound.node_id == old_node.id,
-                    Inbound.protocol == Protocol.vless,
-                )
-            ).scalars()
-        )
-        for old in old_inbounds:
-            services = list(db.execute(select(Service).where(Service.inbound_id == old.id)).scalars())
-            for service in services:
-                service.node_id = node.id
-                service.inbound_id = inbound.id
-                service.protocol = Protocol.vless
-                service.flow = None
-            if services:
-                old.is_active = False
-    from app.db.models import Plan
     for plan in db.execute(select(Plan)).scalars():
         plan.inbound_ids = [inbound.id]
         plan.allowed_protocols = [Protocol.vless.value]
