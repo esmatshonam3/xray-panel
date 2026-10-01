@@ -88,22 +88,37 @@ def create_railway_node(db: DbSession, actor: AdminUser) -> NodeOut:
         )
     name = "railway-xray"
     node = db.execute(select(Node).where(Node.name == name)).scalar_one_or_none()
-    if node is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Railway Xray node is already registered")
-    node = Node(
-        name=name,
-        address="http://node-agent.railway.internal:8081",
-        public_host=settings.railway_tcp_proxy_domain,
-        region="Railway",
-        tags=["railway", "default"],
-        is_active=True,
-        max_services=0,
-        status=NodeStatus.unknown,
-    )
+    created = node is None
+    if node is None:
+        node = Node(
+            name=name,
+            address="http://node-agent.railway.internal:8081",
+            public_host=settings.railway_tcp_proxy_domain,
+            region="Railway",
+            tags=["railway", "default"],
+            is_active=True,
+            max_services=0,
+            status=NodeStatus.unknown,
+        )
+        db.add(node)
+    else:
+        # Re-registering is also the recovery path for a node token that can
+        # no longer be decrypted after an encryption-key change or bad seed.
+        node.address = "http://node-agent.railway.internal:8081"
+        node.public_host = settings.railway_tcp_proxy_domain
+        node.region = "Railway"
+        node.tags = ["railway", "default"]
+        node.is_active = True
     node.api_token = settings.railway_node_token
-    db.add(node)
     db.flush()
-    audit(db, action="node.create", actor_id=actor.id, entity_type="node", entity_id=node.id, meta={"name": node.name, "provider": "railway"})
+    audit(
+        db,
+        action="node.create" if created else "node.update",
+        actor_id=actor.id,
+        entity_type="node",
+        entity_id=node.id,
+        meta={"name": node.name, "provider": "railway", "token_refreshed": not created},
+    )
     db.commit()
     health = NodeClient(node).health()
     if health.ok:
