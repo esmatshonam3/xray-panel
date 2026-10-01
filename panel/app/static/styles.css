@@ -84,6 +84,9 @@
 /* ------------------------------------------------------------------ base */
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Keep the native hidden state authoritative over component display rules. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
