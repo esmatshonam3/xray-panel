@@ -44,7 +44,8 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------- bootstrap account
     superadmin_username: str = "admin"
-    superadmin_password: str = "admin12345"
+    # Convenient local bootstrap. Production must set a unique password.
+    superadmin_password: str = "admin"
     superadmin_telegram_id: Optional[int] = None
 
     # --------------------------------------------------------------- database

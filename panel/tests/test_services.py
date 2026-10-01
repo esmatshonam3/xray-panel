@@ -152,6 +152,14 @@ def test_bulk_actions(client, auth_headers, normal_user, inbound, plan, db):
         assert db.get(Service, service_id).status == ServiceStatus.disabled
 
     response = client.post(
+        "/api/v1/services/bulk", headers=auth_headers, json={"service_ids": ids, "action": "enable"}
+    )
+    assert response.status_code == 200
+    for service_id in ids:
+        db.refresh(db.get(Service, service_id))
+        assert db.get(Service, service_id).status == ServiceStatus.active
+
+    response = client.post(
         "/api/v1/services/bulk", headers=auth_headers, json={"service_ids": ids, "action": "delete"}
     )
     assert response.status_code == 200

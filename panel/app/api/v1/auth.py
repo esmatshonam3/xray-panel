@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Annotated
+from typing import Annotated, Optional
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import Ctx, CurrentUser, DbSession, rate_limit
@@ -40,6 +41,14 @@ from app.services.billing import apply_referral, ensure_referral_code
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 log = get_logger(__name__)
+
+class ProfileUpdate(BaseModel):
+    username: Optional[str] = Field(default=None, min_length=3, max_length=64)
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+
+
 
 login_limiter = SlidingWindowLimiter(settings.login_max_attempts, settings.login_window_seconds)
 
@@ -228,6 +237,55 @@ def change_password(payload: ChangePasswordRequest, user: CurrentUser, db: DbSes
         commit=True,
     )
     return Message(detail="Password updated")
+
+
+@router.patch("/profile", response_model=UserMe)
+def update_profile(payload: ProfileUpdate, user: CurrentUser, db: DbSession, ctx: Ctx) -> UserMe:
+    """Update the signed-in account username and/or password."""
+    username = payload.username
+    current_password = payload.current_password
+    new_password = payload.new_password
+    if not current_password or not verify_password(str(current_password), user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+    if not username and not new_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Provide a new username or password")
+    if username is not None:
+        username = str(username).strip()
+        if username != user.username and db.execute(select(User).where(User.username == username)).scalar_one_or_none():
+            raise HTTPException(status.HTTP_409_CONFLICT, "Username already taken")
+        user.username = username
+    if new_password:
+        if new_password.isalpha() or new_password.isdigit():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Password must mix letters and digits")
+        user.password_hash = hash_password(new_password)
+        user.must_change_password = False
+    audit(
+        db,
+        action="user.update",
+        actor_id=user.id,
+        actor_type="user",
+        actor_label=user.username,
+        entity_type="user",
+        entity_id=user.id,
+        ip_address=ctx.ip,
+        meta={"username_changed": username is not None, "password_changed": bool(new_password)},
+        commit=True,
+    )
+    return UserMe.model_validate(
+        {
+            "id": user.id,
+            "uuid": user.uuid,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "status": user.status,
+            "balance": user.balance,
+            "telegram_id": user.telegram_id,
+            "referral_code": user.referral_code,
+            "totp_enabled": bool(user.totp_secret),
+            "created_at": user.created_at,
+        }
+    )
 
 
 @router.post("/totp/setup", response_model=TotpSetupOut)

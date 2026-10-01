@@ -227,8 +227,13 @@ def bulk(payload: ServiceBulkAction, db: DbSession, actor: AdminUser) -> Message
             service.last_raw_down = 0
             if service.status == ServiceStatus.limited:
                 service.status = ServiceStatus.active
+                ok, error = push_service(db, service)
+                service.is_synced = ok
+                service.sync_error = error
         elif payload.action == "sync":
-            push_service(db, service)
+            ok, error = push_service(db, service) if service.is_usable else (True, None)
+            service.is_synced = ok
+            service.sync_error = error
         affected += 1
 
     db.commit()

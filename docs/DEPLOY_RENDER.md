@@ -189,7 +189,7 @@ curl -sX POST $PANEL/api/v1/telegram/setup -H "Authorization: Bearer $TOKEN"
 ```bash
 cp .env.example .env
 docker compose up -d --build  # پنل :8000، ایجنت :8081، پستگرس :5432
-# مرورگر: http://localhost:8000  (admin / admin12345)
+# مرورگر: http://localhost:8000  (admin / admin)
 ```
 
 یا فقط پنل با SQLite:

@@ -51,6 +51,16 @@
     'login.needCredentials': 'نام کاربری و رمز عبور را وارد کنید',
     'login.sessionExpired': 'نشست شما منقضی شد. دوباره وارد شوید.',
 
+    'profile.title': 'حساب کاربری',
+    'profile.username': 'نام کاربری جدید',
+    'profile.currentPassword': 'رمز فعلی برای تأیید',
+    'profile.newPassword': 'رمز جدید (اختیاری)',
+    'profile.confirmPassword': 'تکرار رمز جدید',
+    'profile.currentRequired': 'برای ذخیره، رمز فعلی را وارد کنید',
+    'profile.passwordMismatch': 'تکرار رمز جدید یکسان نیست',
+    'profile.noChanges': 'تغییری برای ذخیره وجود ندارد',
+    'profile.updated': 'مشخصات حساب به‌روزرسانی شد',
+
     'common.save': 'ذخیره',
     'common.saved': 'ذخیره شد',
     'common.cancel': 'انصراف',
@@ -486,6 +496,16 @@
     'login.throttled': 'Too many attempts. Please wait and retry.',
     'login.needCredentials': 'Enter your username and password',
     'login.sessionExpired': 'Your session expired. Please sign in again.',
+
+    'profile.title': 'Account settings',
+    'profile.username': 'New username',
+    'profile.currentPassword': 'Current password (to confirm)',
+    'profile.newPassword': 'New password (optional)',
+    'profile.confirmPassword': 'Confirm new password',
+    'profile.currentRequired': 'Enter your current password to save',
+    'profile.passwordMismatch': 'New passwords do not match',
+    'profile.noChanges': 'There are no changes to save',
+    'profile.updated': 'Account details updated',
 
     'common.save': 'Save',
     'common.saved': 'Saved',

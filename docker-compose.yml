@@ -31,7 +31,7 @@ services:
     environment:
       DATABASE_URL: postgresql://xpanel:xpanel_dev_password@db:5432/xpanel
       SECRET_KEY: dev-secret-change-me-please-0000000000000000000000000000
-      SUPERADMIN_PASSWORD: admin12345
+      SUPERADMIN_PASSWORD: admin
       PANEL_BASE_URL: http://localhost:8000
       ENVIRONMENT: development
       DEBUG: "true"

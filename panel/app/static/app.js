@@ -1530,6 +1530,50 @@
     $$('#palette-results .item')[state.paletteIndex]?.scrollIntoView({ block: 'nearest' });
   }
 
+  function profileDialog() {
+    const currentName = esc(state.me?.username || '');
+    openModal(t('profile.title'), `
+      <label class="field" for="profile-username">${t('profile.username')}</label>
+      <input id="profile-username" minlength="3" maxlength="64" value="${currentName}" autocomplete="username" />
+      <label class="field" for="profile-current">${t('profile.currentPassword')}</label>
+      <input id="profile-current" type="password" autocomplete="current-password" />
+      <label class="field" for="profile-new">${t('profile.newPassword')}</label>
+      <input id="profile-new" type="password" minlength="8" autocomplete="new-password" />
+      <label class="field" for="profile-confirm">${t('profile.confirmPassword')}</label>
+      <input id="profile-confirm" type="password" minlength="8" autocomplete="new-password" />`, [
+      { label: t('common.cancel'), onClick: closeModal },
+      { label: t('common.save'), kind: 'primary', onClick: async (btn) => {
+        const username = $('#profile-username').value.trim();
+        const current_password = $('#profile-current').value;
+        const new_password = $('#profile-new').value;
+        const confirmation = $('#profile-confirm').value;
+        if (!current_password) return toast(t('profile.currentRequired'), 'warn');
+        if (new_password && new_password !== confirmation) return toast(t('profile.passwordMismatch'), 'warn');
+        if (!new_password && username === state.me.username) return toast(t('profile.noChanges'), 'warn');
+        btn.classList.add('loading');
+        try {
+          const updated = await api('/auth/profile', { method: 'PATCH', body: {
+            username, current_password, ...(new_password ? { new_password } : {}),
+          } });
+          state.me = updated;
+          $('#me-name').textContent = updated.username;
+          $('#me-avatar').textContent = updated.username.slice(0, 1).toUpperCase();
+          closeModal();
+          toast(t('profile.updated'), 'ok');
+          if (new_password) {
+            try {
+              const pair = await api('/auth/login', { method: 'POST', body: { username, password: new_password } });
+              setTokens(pair.access_token, pair.refresh_token);
+            } catch {
+              logout(t('login.sessionExpired'));
+            }
+          }
+        } catch (err) { toast(err.message, 'err'); }
+        finally { btn.classList.remove('loading'); }
+      } },
+    ]);
+  }
+
   /* ================================================================= session */
   function logout(message) {
     state.token = ''; state.refresh = ''; state.me = null;
@@ -1635,6 +1679,7 @@
       try { await api('/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
       logout();
     };
+    $('#btn-profile').onclick = profileDialog;
     $('#btn-refresh').onclick = () => { navigate(state.page); refreshBadges(); };
 
     $('#btn-menu').onclick = () => {

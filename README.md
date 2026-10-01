@@ -1,7 +1,7 @@
 # Xray Panel — پنل مدیریت سرویس پروکسی/VPN مبتنی بر Xray
 
 پنل کامل مدیریت سرویس پروکسی با هسته‌ی **Xray**، ربات **تلگرام**، رابط کاربری
-مدیریت، سهمیه و انقضا، پرداخت، گزارش مصرف، مانیتورینگ و هشدار — آماده‌ی
+  مدیریت، سهمیه و انقضا، پرداخت، گزارش مصرف، مانیتورینگ و هشدار — آماده‌ی
 استقرار روی **Railway** (و Render / Docker / هر VPS).
 
 > **معماری در یک نگاه:** پنل (کنترل‌پلین) روی Railway اجرا می‌شود و نودهای Xray
@@ -170,7 +170,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-- پنل: <http://localhost:8000> — ورود با `admin` / `admin12345`
+- پنل: <http://localhost:8000> — ورود با `admin` / `admin` (پس از ورود تغییر رمز توصیه می‌شود)
 - ایجنت نود: <http://localhost:8081/health>
 - Postgres: `localhost:5432`
 
@@ -270,7 +270,7 @@ python -m app.cli check
 | `SECRET_KEY` | — | امضای JWT؛ حداقل ۶۴ کاراکتر تصادفی |
 | `ENCRYPTION_KEY` | مشتق از `SECRET_KEY` | رمزنگاری توکن نود و کلید Reality |
 | `PANEL_BASE_URL` | `http://localhost:8000` | پایه‌ی لینک اشتراک و وبهوک تلگرام |
-| `SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` | `admin` | حساب مالک که در اولین بوت ساخته می‌شود |
+| `SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` | `admin` / `admin` (توسعه محلی) | حساب مالک که در اولین بوت ساخته می‌شود؛ برای Railway/تولید باید پیش از بوت، رمز یکتایی در `SUPERADMIN_PASSWORD` تنظیم شود |
 | `TELEGRAM_ENABLED` | `true` | فعال‌سازی ربات |
 | `TELEGRAM_BOT_TOKEN` | — | از BotFather |
 | `TELEGRAM_WEBHOOK_SECRET` | — | اعتبارسنجی وبهوک |

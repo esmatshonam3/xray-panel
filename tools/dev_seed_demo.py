@@ -40,7 +40,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Seed demo data into a running panel")
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--admin", default="admin")
-    parser.add_argument("--admin-password", default="admin12345")
+    parser.add_argument("--admin-password", default="admin")
     args = parser.parse_args()
     base = args.base.rstrip("/")
 

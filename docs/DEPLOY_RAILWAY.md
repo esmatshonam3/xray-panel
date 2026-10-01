@@ -242,7 +242,7 @@ curl -sX POST $PANEL/api/v1/nodes/1/sync -H "Authorization: Bearer $TOKEN"
 ```bash
 cp .env.example .env      # سپس ویرایش کنید
 docker compose up -d --build
-# پنل: http://localhost:8000   (admin / admin12345)
+# پنل: http://localhost:8000   (admin / admin)
 # ایجنت: http://localhost:8081
 ```
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 def test_login_success(client, admin_user):
-    response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin12345"})
+    response = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin"})
     assert response.status_code == 200
     body = response.json()
     assert body["access_token"] and body["refresh_token"]
@@ -32,14 +32,14 @@ def test_me_returns_profile(client, auth_headers):
 
 
 def test_refresh_token_flow(client, admin_user):
-    login = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin12345"}).json()
+    login = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin"}).json()
     response = client.post("/api/v1/auth/refresh", json={"refresh_token": login["refresh_token"]})
     assert response.status_code == 200
     assert response.json()["access_token"]
 
 
 def test_access_token_cannot_be_used_as_refresh(client, admin_user):
-    login = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin12345"}).json()
+    login = client.post("/api/v1/auth/login", json={"username": "admin", "password": "admin"}).json()
     response = client.post("/api/v1/auth/refresh", json={"refresh_token": login["access_token"]})
     assert response.status_code == 401
 
@@ -78,6 +78,16 @@ def test_change_password(client, user_headers):
     assert client.post(
         "/api/v1/auth/login", json={"username": "customer", "password": "brandnew123"}
     ).status_code == 200
+
+
+def test_update_profile_changes_username_and_password(client, auth_headers):
+    response = client.patch("/api/v1/auth/profile", headers=auth_headers, json={
+        "username": "newadmin", "current_password": "admin", "new_password": "better-pass-123",
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["username"] == "newadmin"
+    login = client.post("/api/v1/auth/login", json={"username": "newadmin", "password": "better-pass-123"})
+    assert login.status_code == 200
 
 
 def test_weak_password_rejected(client, user_headers):

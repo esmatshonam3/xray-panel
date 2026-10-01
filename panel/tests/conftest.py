@@ -143,7 +143,7 @@ def admin_user(db) -> User:
     user = User(
         uuid=str(uuid.uuid4()),
         username="admin",
-        password_hash=hash_password("admin12345"),
+        password_hash=hash_password("admin"),
         role=Role.owner,
         status=UserStatus.active,
     )
@@ -228,7 +228,7 @@ def plan(db) -> Plan:
 @pytest.fixture
 def auth_headers(client, admin_user) -> dict:
     response = client.post(
-        "/api/v1/auth/login", json={"username": "admin", "password": "admin12345"}
+        "/api/v1/auth/login", json={"username": "admin", "password": "admin"}
     )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

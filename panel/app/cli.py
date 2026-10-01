@@ -39,6 +39,9 @@ def cmd_init_db(args: argparse.Namespace) -> int:
     init_db()
     print("✅ database schema is ready")
     if args.seed:
+        if settings.is_production and settings.superadmin_password in ("admin", "admin12345", "CHANGE_ME_strong_password"):
+            print("❌ Set a unique SUPERADMIN_PASSWORD before booting the production panel")
+            return 1
         with SessionLocal() as db:
             ensure_superadmin(db)
             if args.seed_demo:
@@ -70,8 +73,6 @@ def ensure_superadmin(db) -> User:
     db.add(user)
     db.commit()
     print(f"✅ owner account created: {user.username}")
-    if settings.is_production and settings.superadmin_password in ("admin12345", "CHANGE_ME_strong_password"):
-        print("⚠️  SECURITY: change SUPERADMIN_PASSWORD immediately (currently a default value)")
     return user
 
 
@@ -247,7 +248,7 @@ def cmd_check(_: argparse.Namespace) -> int:
 
     if settings.secret_key.startswith("CHANGE_ME"):
         problems.append("SECRET_KEY is still the default value")
-    if settings.is_production and settings.superadmin_password in ("admin12345", "CHANGE_ME_strong_password"):
+    if settings.is_production and settings.superadmin_password in ("admin", "admin12345", "CHANGE_ME_strong_password"):
         problems.append("SUPERADMIN_PASSWORD is a default value")
     if settings.telegram_enabled and not settings.telegram_bot_token:
         warnings.append("TELEGRAM_ENABLED=true but TELEGRAM_BOT_TOKEN is empty")
