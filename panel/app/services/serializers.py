@@ -10,6 +10,17 @@ from app.db.models import Node, Payment, Service, User
 from app.services.xray_links import build_link, build_links
 
 
+def _note_int(note: Optional[str], key: str) -> int:
+    marker = f"{key}="
+    for item in (note or "").split():
+        if item.startswith(marker):
+            try:
+                return max(int(item[len(marker) :]), 0)
+            except ValueError:
+                return 0
+    return 0
+
+
 def service_to_out(service: Service, *, include_links: bool = False) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": service.id,
@@ -30,6 +41,9 @@ def service_to_out(service: Service, *, include_links: bool = False) -> dict[str
         "expires_at": service.expires_at,
         "days_left": service.days_left,
         "traffic_limit_bytes": service.traffic_limit_bytes,
+        "connection_limit": _note_int(service.note, "connection_limit"),
+        "ip_limit": _note_int(service.note, "ip_limit"),
+        "speed_limit_mbps": round(_note_int(service.note, "speed_limit_bytes") * 8 / 1_000_000, 2),
         "used_up_bytes": service.used_up_bytes,
         "used_down_bytes": service.used_down_bytes,
         "used_bytes": service.used_bytes,

@@ -25,7 +25,7 @@ from app.schemas import (
 )
 from app.services.audit import audit
 from app.services.node_client import NodeClient
-from app.services.provisioning import sync_inbound, sync_node
+from app.services.provisioning import sync_inbound, sync_node, uses_live_proxy
 from app.services.serializers import count_services_by_node, node_to_out
 
 router = APIRouter(prefix="/nodes", tags=["nodes"])
@@ -37,6 +37,8 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 @router.get("", response_model=Page[NodeOut])
 def list_nodes(db: DbSession, paging: Paging, _: StaffUser) -> Page[NodeOut]:
     stmt = select(Node)
+    if settings.live_proxy_enabled:
+        stmt = stmt.where(Node.name == "panel-websocket-relay")
     if paging.q:
         like = f"%{paging.q}%"
         stmt = stmt.where(Node.name.ilike(like) | Node.public_host.ilike(like))
@@ -53,6 +55,8 @@ def list_nodes(db: DbSession, paging: Paging, _: StaffUser) -> Page[NodeOut]:
 
 @router.post("", response_model=NodeOut, status_code=status.HTTP_201_CREATED)
 def create_node(payload: NodeCreate, db: DbSession, actor: AdminUser) -> NodeOut:
+    if settings.live_proxy_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Locations are managed by the panel's built-in WebSocket relay")
     if db.execute(select(Node).where(Node.name == payload.name)).scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Node name already exists")
     node = Node(
@@ -81,6 +85,10 @@ def create_node(payload: NodeCreate, db: DbSession, actor: AdminUser) -> NodeOut
 @router.post("/railway", response_model=NodeOut, status_code=status.HTTP_201_CREATED)
 def create_railway_node(db: DbSession, actor: AdminUser) -> NodeOut:
     """Register a node-agent running as a private service in this Railway project."""
+    if settings.live_proxy_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The panel now hosts its own VLESS WebSocket relay")
+    if settings.live_proxy_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The panel's built-in WebSocket relay does not need a node-agent")
     if not settings.railway_tcp_proxy_domain or not settings.railway_tcp_proxy_port or not settings.railway_node_token:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -128,6 +136,8 @@ def create_railway_node(db: DbSession, actor: AdminUser) -> NodeOut:
 
 @router.get("/{node_id}", response_model=NodeOut)
 def get_node(node_id: int, db: DbSession, _: StaffUser) -> NodeOut:
+    if settings.live_proxy_enabled and node_id != _relay_node_id(db):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
     node = _load_node(db, node_id)
     counts = count_services_by_node(db)
     return NodeOut.model_validate(node_to_out(node, service_count=counts.get(node.id, 0)))
@@ -135,6 +145,8 @@ def get_node(node_id: int, db: DbSession, _: StaffUser) -> NodeOut:
 
 @router.patch("/{node_id}", response_model=NodeOut)
 def update_node(node_id: int, payload: NodeUpdate, db: DbSession, actor: AdminUser) -> NodeOut:
+    if settings.live_proxy_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The built-in relay location is managed automatically")
     node = _load_node(db, node_id)
     data = payload.model_dump(exclude_unset=True)
     token = data.pop("api_token", None)
@@ -151,6 +163,8 @@ def update_node(node_id: int, payload: NodeUpdate, db: DbSession, actor: AdminUs
 
 @router.post("/{node_id}/rotate-token", response_model=dict)
 def rotate_token(node_id: int, db: DbSession, actor: AdminUser) -> dict:
+    if settings.live_proxy_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The built-in relay has no node token")
     node = _load_node(db, node_id)
     raw = generate_token(32, prefix="nd_")
     node.api_token = raw
@@ -162,6 +176,10 @@ def rotate_token(node_id: int, db: DbSession, actor: AdminUser) -> dict:
 @router.get("/{node_id}/health", response_model=NodeHealth)
 def node_health(node_id: int, db: DbSession, _: StaffUser) -> NodeHealth:
     node = _load_node(db, node_id)
+    if settings.live_proxy_enabled:
+        from app.db.base import utcnow
+
+        return NodeHealth(node_id=node.id, name=node.name, status=NodeStatus.online, reachable=True, checked_at=utcnow())
     resp = NodeClient(node).health()
     if not resp.ok:
         node.status = NodeStatus.offline
@@ -211,6 +229,8 @@ def sync(node_id: int, db: DbSession, actor: AdminUser) -> NodeSyncResult:
 @router.post("/{node_id}/restart-xray", response_model=Message)
 def restart_xray(node_id: int, db: DbSession, actor: AdminUser) -> Message:
     node = _load_node(db, node_id)
+    if settings.live_proxy_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "The panel's built-in WebSocket relay does not use Xray")
     resp = NodeClient(node).restart()
     audit(db, action="node.update", actor_id=actor.id, entity_type="node", entity_id=node.id, meta={"restart_xray": True, "ok": resp.ok}, status="success" if resp.ok else "failure")
     db.commit()
@@ -222,6 +242,8 @@ def restart_xray(node_id: int, db: DbSession, actor: AdminUser) -> Message:
 @router.delete("/{node_id}", response_model=Message)
 def delete_node(node_id: int, db: DbSession, actor: AdminUser) -> Message:
     node = _load_node(db, node_id)
+    if settings.live_proxy_enabled and node.name == "panel-websocket-relay":
+        raise HTTPException(status.HTTP_409_CONFLICT, "The built-in relay location cannot be deleted")
     active = db.execute(
         select(func.count(Service.id)).where(Service.node_id == node.id)
     ).scalar_one()
@@ -234,6 +256,10 @@ def delete_node(node_id: int, db: DbSession, actor: AdminUser) -> Message:
     db.delete(node)
     db.commit()
     return Message(detail="Node deleted")
+
+
+def _relay_node_id(db: DbSession) -> Optional[int]:
+    return db.execute(select(Node.id).where(Node.name == "panel-websocket-relay")).scalar_one_or_none()
 
 
 def _load_node(db, node_id: int) -> Node:
@@ -270,6 +296,8 @@ inbound_router = APIRouter(prefix="/inbounds", tags=["inbounds"])
 @inbound_router.get("", response_model=list[InboundOut])
 def list_inbounds(db: DbSession, _: StaffUser, node_id: Optional[int] = None) -> list[InboundOut]:
     stmt = select(Inbound)
+    if settings.live_proxy_enabled:
+        stmt = stmt.join(Node, Inbound.node_id == Node.id).where(Node.name == "panel-websocket-relay")
     if node_id:
         stmt = stmt.where(Inbound.node_id == node_id)
     rows = list(db.execute(stmt.order_by(Inbound.sort_order, Inbound.id)).unique().scalars())
@@ -289,6 +317,10 @@ def list_inbounds(db: DbSession, _: StaffUser, node_id: Optional[int] = None) ->
 def create_inbound(payload: InboundCreate, db: DbSession, actor: AdminUser) -> InboundOut:
     if db.get(Node, payload.node_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Node not found")
+    if settings.live_proxy_enabled and (payload.protocol != Protocol.vless or payload.transport != Transport.ws):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The built-in Railway relay supports VLESS over WebSocket only")
+    if settings.live_proxy_enabled and payload.node_id != _relay_node_id(db):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Choose the built-in Railway location")
     exists = db.execute(
         select(Inbound).where(Inbound.node_id == payload.node_id, Inbound.tag == payload.tag)
     ).scalar_one_or_none()
@@ -325,11 +357,16 @@ def update_inbound(inbound_id: int, payload: InboundUpdate, db: DbSession, actor
     if inbound is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Inbound not found")
     data = payload.model_dump(exclude_unset=True)
+    if settings.live_proxy_enabled and (
+        data.get("transport", inbound.transport) != Transport.ws
+        or inbound.protocol != Protocol.vless
+    ):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The built-in Railway relay supports VLESS over WebSocket only")
     private_key = data.pop("reality_private_key", None)
     for key, value in data.items():
         if value is not None:
             setattr(inbound, key, value)
-    if inbound.node.name == "railway-xray":
+    if inbound.node.name == "railway-xray" and not uses_live_proxy(inbound):
         host = (inbound.public_host or inbound.node.public_host or "").lower()
         extra = dict(inbound.extra or {})
         if inbound.transport == Transport.ws and inbound.public_port == 443 and host.endswith(".up.railway.app"):
@@ -402,6 +439,8 @@ def delete_inbound(inbound_id: int, db: DbSession, actor: AdminUser) -> Message:
     inbound = db.get(Inbound, inbound_id)
     if inbound is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Inbound not found")
+    if uses_live_proxy(inbound):
+        raise HTTPException(status.HTTP_409_CONFLICT, "The built-in VLESS WebSocket inbound is managed automatically")
     count = db.execute(select(func.count(Service.id)).where(Service.inbound_id == inbound.id)).scalar_one()
     if count:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Inbound hosts {count} service(s); remove them first.")
@@ -417,7 +456,14 @@ def inbound_clients(inbound_id: int, db: DbSession, _: StaffUser) -> list[dict]:
     inbound = db.get(Inbound, inbound_id)
     if inbound is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Inbound not found")
+    if uses_live_proxy(inbound):
+        active = db.execute(select(Service).where(Service.inbound_id == inbound.id, Service.status == "active")).scalars()
+        return [{"email": service.email_tag, "uuid": service.uuid, "state": service.status.value} for service in active]
     resp = NodeClient(inbound.node).inbound_config(inbound.tag)
     if not resp.ok:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, resp.error or "node error")
     return resp.data.get("clients", [])
+
+
+def _relay_node_id(db: DbSession) -> Optional[int]:
+    return db.execute(select(Node.id).where(Node.name == "panel-websocket-relay")).scalar_one_or_none()

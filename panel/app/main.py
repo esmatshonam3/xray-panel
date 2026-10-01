@@ -41,6 +41,16 @@ async def lifespan(app: FastAPI):
 
     init_db()
 
+    if settings.live_proxy_enabled:
+        try:
+            from app.db.session import SessionLocal
+            from app.services.live_proxy import ensure_default_relay_endpoint
+
+            with SessionLocal() as db:
+                ensure_default_relay_endpoint(db)
+        except Exception as exc:  # pragma: no cover
+            log.exception("built-in WebSocket relay bootstrap failed", extra={"error": str(exc)})
+
     # Bootstrap the owner account on first boot so the panel is never locked out.
     try:
         from app.cli import ensure_superadmin
@@ -175,6 +185,12 @@ def create_app() -> FastAPI:
     from app.api.v1.subscription import short_router
 
     app.include_router(short_router)
+
+    # Built-in VLESS WebSocket relay. It shares the Railway HTTP service and
+    # therefore needs no separately deployed node-agent process.
+    from app.services.live_proxy import router as live_proxy_router
+
+    app.include_router(live_proxy_router)
 
     @app.get("/api", include_in_schema=False)
     def api_index() -> dict:

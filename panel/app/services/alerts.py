@@ -184,6 +184,8 @@ def check_node_health(db: Session) -> list[Alert]:
     from app.services.node_client import NodeClient
 
     created: list[Alert] = []
+    if settings.live_proxy_enabled:
+        return created
     stale_after = timedelta(seconds=settings.node_heartbeat_stale_seconds)
 
     for node in db.execute(select(Node).where(Node.is_active.is_(True))).scalars():

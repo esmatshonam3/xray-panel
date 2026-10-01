@@ -370,6 +370,9 @@ class ServiceCreate(BaseModel):
     label: Optional[str] = None
     duration_days: Optional[int] = Field(default=None, gt=0)
     traffic_gb: Optional[float] = Field(default=None, ge=0)
+    connection_limit: int = Field(default=0, ge=0, le=100000)
+    ip_limit: int = Field(default=0, ge=0, le=100000)
+    speed_limit_mbps: float = Field(default=0, ge=0, le=100000)
     expires_at: Optional[datetime] = None
     note: Optional[str] = None
     auto_renew: bool = False
@@ -411,6 +414,9 @@ class ServiceOut(ORMModel):
     expires_at: Optional[datetime]
     days_left: Optional[int] = None
     traffic_limit_bytes: int
+    connection_limit: int = 0
+    ip_limit: int = 0
+    speed_limit_mbps: float = 0
     used_up_bytes: int
     used_down_bytes: int
     used_bytes: int = 0

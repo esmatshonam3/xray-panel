@@ -57,21 +57,20 @@ def eligible_inbounds(
     if node_id:
         stmt = stmt.where(Inbound.node_id == node_id)
     if plan:
-        if plan.inbound_ids:
+        if plan.inbound_ids and not settings.live_proxy_enabled:
             stmt = stmt.where(Inbound.id.in_(plan.inbound_ids))
-        if plan.allowed_protocols:
+        if plan.allowed_protocols and not settings.live_proxy_enabled:
             stmt = stmt.where(Inbound.protocol.in_([Protocol(p) for p in plan.allowed_protocols]))
         if plan.node_group:
             # node tags are JSON; do a portable filter in Python afterwards
             pass
     candidates = list(db.execute(stmt).unique().scalars())
 
-    # This panel is deployed with its Xray core as the Railway node-agent.
-    # Only WS inbounds can traverse Railway's public HTTPS listener without
-    # a separate raw TCP proxy, so don't sell links that cannot be reached.
+    # The built-in relay accepts only VLESS over WebSocket. Keep legacy
+    # node-agent modes available for non-Railway installations.
     candidates = [inbound for inbound in candidates if _can_advertise(inbound)]
 
-    if plan and plan.node_group:
+    if plan and plan.node_group and not settings.live_proxy_enabled:
         candidates = [i for i in candidates if plan.node_group in (i.node.tags or [])]
 
     # Capacity check + ordering: default inbounds first, then lightest loaded.
@@ -95,17 +94,17 @@ def eligible_inbounds(
 
 
 def _can_advertise(inbound: Inbound) -> bool:
-    is_railway_agent = inbound.node.name == "railway-xray" or ".railway.internal" in inbound.node.address
-    if not is_railway_agent:
+    if not settings.live_proxy_enabled:
         return True
-    if inbound.transport.value != "ws":
-        return False
+    return uses_live_proxy(inbound)
+
+
+def uses_live_proxy(inbound: Inbound) -> bool:
     return bool(
-        inbound.extra
-        and inbound.extra.get("railway_ws_tls")
-        and inbound.public_host
-        and inbound.public_host.lower().endswith(".up.railway.app")
-        and inbound.public_port == 443
+        settings.live_proxy_enabled
+        and inbound.protocol == Protocol.vless
+        and inbound.transport.value == "ws"
+        and inbound.security.value in ("none", "tls")
     )
 
 
@@ -152,6 +151,9 @@ def create_service(
     node_id: Optional[int] = None,
     duration_days: Optional[int] = None,
     traffic_gb: Optional[float] = None,
+    connection_limit: int = 0,
+    ip_limit: int = 0,
+    speed_limit_mbps: float = 0,
     expires_at: Optional[datetime] = None,
     label: Optional[str] = None,
     note: Optional[str] = None,
@@ -184,7 +186,7 @@ def create_service(
         expires_at=expires_at or (utcnow() + timedelta(days=days)),
         auto_renew=auto_renew,
         traffic_limit_bytes=int(limit_gb * 1024 ** 3) if limit_gb else 0,
-        note=note,
+        note=_encode_relay_limits(note, connection_limit, ip_limit, speed_limit_mbps) if uses_live_proxy(inbound) else note,
     )
     db.add(service)
     db.flush()
@@ -212,6 +214,17 @@ def create_service(
         db.commit()
     log.info("service provisioned", extra={"service_id": service.id, "user": user.username, "synced": ok})
     return service
+
+
+def _encode_relay_limits(note: Optional[str], connection_limit: int, ip_limit: int, speed_limit_mbps: float) -> Optional[str]:
+    """Persist optional relay limits in existing notes without a schema migration."""
+    data = {
+        "connection_limit": max(int(connection_limit or 0), 0),
+        "ip_limit": max(int(ip_limit or 0), 0),
+        "speed_limit_bytes": max(int((speed_limit_mbps or 0) * 1_000_000 / 8), 0),
+    }
+    metadata = " ".join(f"{key}={value}" for key, value in data.items())
+    return f"{(note or '').strip()}\n{metadata}".strip()
 
 
 def renew_service(
@@ -311,6 +324,10 @@ def push_service(db: Session, service: Service) -> tuple[bool, Optional[str]]:
     if not service.is_usable and service.status != ServiceStatus.active:
         return remove_service(db, service)
 
+    if uses_live_proxy(service.inbound):
+        service.last_synced_at = utcnow()
+        return True, None
+
     client = NodeClient(service.node)
     payload = build_user_payload(service)
     payload["enable"] = service.is_usable
@@ -323,6 +340,8 @@ def push_service(db: Session, service: Service) -> tuple[bool, Optional[str]]:
 
 
 def remove_service(db: Session, service: Service) -> tuple[bool, Optional[str]]:
+    if uses_live_proxy(service.inbound):
+        return True, None
     client = NodeClient(service.node)
     resp = client.remove_user(service.inbound.tag, service.email_tag)
     if not resp.ok and resp.status_code not in (404, 400):
@@ -341,6 +360,14 @@ def sync_inbound(db: Session, inbound: Inbound, *, actor_id: Optional[int] = Non
             )
         ).unique().scalars()
     )
+    if uses_live_proxy(inbound):
+        now = utcnow()
+        for service in services:
+            service.is_synced = True
+            service.sync_error = None
+            service.last_synced_at = now
+        db.commit()
+        return True, f"{len(services)} users active on built-in WebSocket relay"
     users = [build_user_payload(s) for s in services]
     client = NodeClient(inbound.node)
     resp = client.apply_users(inbound.tag, users, protocol=inbound.protocol.value)
@@ -394,6 +421,17 @@ def inbound_spec(inbound: Inbound) -> dict[str, Any]:
 
 def sync_node(db: Session, node: Node, *, actor_id: Optional[int] = None) -> dict[str, Any]:
     """Push inbound definitions, then the users of every active inbound."""
+    if settings.live_proxy_enabled:
+        applied = 0
+        for inbound in node.inbounds:
+            if not inbound.is_active or not uses_live_proxy(inbound):
+                continue
+            ok, detail = sync_inbound(db, inbound, actor_id=actor_id)
+            if ok:
+                applied += 1
+            else:
+                return {"node_id": node.id, "node": node.name, "ok": False, "applied": applied, "errors": [detail]}
+        return {"node_id": node.id, "node": node.name, "ok": True, "applied": applied, "errors": []}
     client = NodeClient(node)
     specs = [inbound_spec(i) for i in node.inbounds if i.is_active]
 

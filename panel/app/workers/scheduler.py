@@ -77,6 +77,8 @@ def _release_lock() -> None:
 # --------------------------------------------------------------------------- #
 def job_sync_traffic() -> dict[str, Any]:
     """Pull per-user counters from every active node and persist the deltas."""
+    if settings.live_proxy_enabled:
+        return {"updated_services": 0, "source": "built-in WebSocket relay records usage live"}
     from app.services.provisioning import collect_node_stats
 
     total = 0
@@ -146,7 +148,8 @@ def job_health() -> dict[str, Any]:
     from app.services.alerts import check_expiring_services, check_node_health
 
     with session_scope() as db:
-        node_alerts = len(check_node_health(db))
+        from app.core.config import settings
+        node_alerts = 0 if settings.live_proxy_enabled else len(check_node_health(db))
         expiry_alerts = len(check_expiring_services(db))
     return {"node_alerts": node_alerts, "expiry_alerts": expiry_alerts}
 

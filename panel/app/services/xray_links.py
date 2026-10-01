@@ -5,9 +5,10 @@ import base64
 import io
 import json
 from typing import Any, Iterable, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 from app.db.models import Inbound, Protocol, Security, Service, Transport
+from app.core.config import settings
 
 # --------------------------------------------------------------------------- #
 #  Helpers
@@ -34,7 +35,7 @@ def _transport_params(inbound: Inbound) -> dict[str, Any]:
     params: dict[str, Any] = {"type": inbound.transport.value}
     if inbound.transport == Transport.ws:
         path = inbound.path or "/"
-        params["path"] = f"/ws{path}" if _railway_ws_tls(inbound) else path
+        params["path"] = path
         if inbound.host_header:
             params["host"] = inbound.host_header
     elif inbound.transport == Transport.grpc:
@@ -61,7 +62,7 @@ def _security_params(inbound: Inbound) -> dict[str, Any]:
     # node-agent bridge only sees plain WS. Advertise the edge TLS settings to
     # clients without asking the private Xray inbound to load certificates.
     if _railway_ws_tls(inbound):
-        params: dict[str, Any] = {"security": "tls", "sni": inbound.display_host, "alpn": ["http/1.1"]}
+        params: dict[str, Any] = {"security": "tls", "sni": _live_proxy_host(inbound), "alpn": ["http/1.1"]}
         return params
 
     params: dict[str, Any] = {"security": inbound.security.value}
@@ -95,15 +96,28 @@ def _remark(inbound: Inbound, service: Service) -> str:
 
 
 def _railway_ws_tls(inbound: Inbound) -> bool:
+    from urllib.parse import urlsplit
+
+    configured_host = settings.live_proxy_host or urlsplit(settings.panel_base_url).hostname
     return (
-        (inbound.node.name.startswith("railway") or ".railway.internal" in inbound.node.address)
+        settings.live_proxy_enabled
+        and bool(configured_host)
         and inbound.transport == Transport.ws
-        and inbound.security == Security.none
-        and inbound.display_port == 443
-        and bool((inbound.extra or {}).get("railway_ws_tls"))
-        and bool(inbound.public_host)
-        and inbound.public_host.lower().endswith(".up.railway.app")
+        and inbound.protocol == Protocol.vless
+        and inbound.security in (Security.none, Security.tls)
     )
+
+
+def _live_proxy_host(inbound: Inbound) -> str:
+    explicit = (settings.live_proxy_host or "").strip()
+    if explicit:
+        return explicit
+    base = urlsplit(settings.panel_base_url)
+    return (settings.live_proxy_host or base.hostname or inbound.display_host).strip()
+
+
+def _live_proxy_port(inbound: Inbound) -> int:
+    return int(settings.live_proxy_port or 443)
 
 
 # --------------------------------------------------------------------------- #
@@ -111,6 +125,13 @@ def _railway_ws_tls(inbound: Inbound) -> bool:
 # --------------------------------------------------------------------------- #
 def build_vless_link(inbound: Inbound, service: Service) -> str:
     params = {**_transport_params(inbound), **_security_params(inbound), "encryption": "none"}
+    if _railway_ws_tls(inbound):
+        params["path"] = f"{settings.live_proxy_path_prefix.rstrip('/')}/{service.uuid}"
+        params["host"] = _live_proxy_host(inbound)
+        return (
+            f"vless://{service.uuid}@{_live_proxy_host(inbound)}:{_live_proxy_port(inbound)}"
+            f"?{_qs(params)}#{quote(_remark(inbound, service))}"
+        )
     return (
         f"vless://{service.uuid}@{inbound.display_host}:{inbound.display_port}"
         f"?{_qs(params)}#{quote(_remark(inbound, service))}"
@@ -121,17 +142,17 @@ def build_vmess_link(inbound: Inbound, service: Service) -> str:
     payload: dict[str, Any] = {
         "v": "2",
         "ps": _remark(inbound, service),
-        "add": inbound.display_host,
-        "port": str(inbound.display_port),
+        "add": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.display_host,
+        "port": str(_live_proxy_port(inbound) if _railway_ws_tls(inbound) else inbound.display_port),
         "id": service.uuid,
         "aid": "0",
         "scy": "auto",
         "net": inbound.transport.value,
         "type": "none",
-        "host": inbound.host_header or (inbound.display_host if _railway_ws_tls(inbound) else ""),
-        "path": f"/ws{inbound.path or '/'}" if _railway_ws_tls(inbound) else (inbound.path or ""),
-        "tls": "tls" if inbound.security == Security.tls or _railway_ws_tls(inbound) else "",
-        "sni": (inbound.sni or inbound.display_host) if _railway_ws_tls(inbound) else (inbound.sni or ""),
+        "host": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else (inbound.host_header or ""),
+        "path": f"{settings.live_proxy_path_prefix.rstrip('/')}/{service.uuid}" if _railway_ws_tls(inbound) else (inbound.path or ""),
+        "tls": "tls" if _railway_ws_tls(inbound) else ("tls" if inbound.security == Security.tls else ""),
+        "sni": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else (inbound.sni or ""),
         "alpn": ",".join(inbound.alpn or (['http/1.1'] if _railway_ws_tls(inbound) else [])),
         "fp": inbound.fingerprint or "",
     }
@@ -144,8 +165,14 @@ def build_trojan_link(inbound: Inbound, service: Service) -> str:
     params = {**_transport_params(inbound), **_security_params(inbound)}
     params.pop("flow", None)
     params["security"] = inbound.security.value if inbound.security != Security.none else "tls"
+    host = _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.display_host
+    port = _live_proxy_port(inbound) if _railway_ws_tls(inbound) else inbound.display_port
+    if _railway_ws_tls(inbound):
+        params["path"] = f"{settings.live_proxy_path_prefix.rstrip('/')}/{service.uuid}"
+        params["host"] = host
+        params["security"] = "tls"
     return (
-        f"trojan://{quote(service.uuid, safe='')}@{inbound.display_host}:{inbound.display_port}"
+        f"trojan://{quote(service.uuid, safe='')}@{host}:{port}"
         f"?{_qs(params)}#{quote(_remark(inbound, service))}"
     )
 
@@ -192,14 +219,14 @@ def _share_json(service: Service) -> dict[str, Any]:
     return {
         "remark": _remark(inbound, service),
         "protocol": service.protocol.value,
-        "address": inbound.display_host,
-        "port": inbound.display_port,
+        "address": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.display_host,
+        "port": _live_proxy_port(inbound) if _railway_ws_tls(inbound) else inbound.display_port,
         "id": service.uuid,
         "transport": inbound.transport.value,
         "security": inbound.security.value,
-        "sni": inbound.sni,
-        "path": inbound.path,
-        "host": inbound.host_header,
+        "sni": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.sni,
+        "path": f"{settings.live_proxy_path_prefix.rstrip('/')}/{service.uuid}" if _railway_ws_tls(inbound) else inbound.path,
+        "host": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.host_header,
         "flow": service.flow,
         "subscription_url": service.subscription_url,
     }
@@ -230,8 +257,8 @@ def build_clash_yaml(services: list[Service]) -> str:
         names.append(name)
         proxy: dict[str, Any] = {
             "name": name,
-            "server": inbound.display_host,
-            "port": inbound.display_port,
+            "server": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.display_host,
+            "port": _live_proxy_port(inbound) if _railway_ws_tls(inbound) else inbound.display_port,
             "type": svc.protocol.value,
             "udp": True,
         }
@@ -251,17 +278,20 @@ def build_clash_yaml(services: list[Service]) -> str:
             opts: dict[str, Any] = {}
             if inbound.transport == Transport.ws:
                 ws_path = inbound.path or "/"
-                if _railway_ws_tls(inbound):
-                    ws_path = f"/ws{ws_path}"
-                opts = {"path": ws_path, "headers": {"Host": inbound.host_header or inbound.display_host}}
+                if _railway_ws_tls(inbound) and svc.protocol == Protocol.vless:
+                    ws_path = f"{settings.live_proxy_path_prefix.rstrip('/')}/{svc.uuid}"
+                opts = {"path": ws_path, "headers": {"Host": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else (inbound.host_header or inbound.display_host)}}
             elif inbound.transport == Transport.grpc:
                 opts = {"grpc-service-name": inbound.service_name or "grpc"}
             proxy[inbound.transport.value + "-opts"] = opts
 
-        if inbound.security == Security.tls or _railway_ws_tls(inbound):
+        if _railway_ws_tls(inbound):
             proxy["tls"] = True
-            proxy["servername"] = inbound.display_host if _railway_ws_tls(inbound) else (inbound.sni or inbound.display_host)
-            if inbound.alpn and not _railway_ws_tls(inbound):
+            proxy["servername"] = _live_proxy_host(inbound)
+        elif inbound.security == Security.tls:
+            proxy["tls"] = True
+            proxy["servername"] = inbound.sni or inbound.display_host
+            if inbound.alpn:
                 proxy["alpn"] = list(inbound.alpn)
         elif inbound.security == Security.reality:
             proxy["tls"] = True

@@ -57,6 +57,7 @@ export default defineRailway(() => {
       DATABASE_URL: db.env.DATABASE_URL,
       // Self-reference: Railway expands this at deploy time.
       PANEL_BASE_URL: "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+      LIVE_PROXY_ENABLED: "true",
       CORS_ORIGINS: "https://${{RAILWAY_PUBLIC_DOMAIN}}",
       ENVIRONMENT: "production",
       DEBUG: "false",
@@ -75,27 +76,7 @@ export default defineRailway(() => {
     },
   });
 
-  // ----------------------------------------------------------- node agent ---
-  // Data plane: runs xray-core. It needs a TCP Proxy for the inbound port
-  // (Settings -> Networking) which is not expressible in this file.
-  //
-  // NOTE: this service is not strictly required. You can run the agent on any
-  // VPS instead — see docs/DEPLOY_RAILWAY.md, section "بخش ۴".
-  const node = service("xray-node", {
-    source: github(REPO, { branch: BRANCH, rootDirectory: "node-agent" }),
-    healthcheck: "/health",
-    healthcheckTimeout: 120,
-    env: {
-      AGENT_PORT: "8081",
-      XRAY_API_PORT: "10085",
-      XRAY_LOG_LEVEL: "warning",
-      NODE_NAME: "railway-node-1",
-      NODE_TOKEN: preserve(),
-      PUBLIC_HOST: preserve(),
-    },
-  });
-
-  const backend = group("Backend", [panel, node, db]);
+  const backend = group("Backend", [panel, db]);
 
   return project("xray-panel", {
     resources: [backend],

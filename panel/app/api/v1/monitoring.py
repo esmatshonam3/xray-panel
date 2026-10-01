@@ -68,6 +68,8 @@ def deep_health(db: DbSession, _: StaffUser) -> HealthReport:
 
     available_nodes = selectable_nodes(db)
     nodes_total = len(available_nodes)
+    if settings.live_proxy_enabled and nodes_total == 0:
+        nodes_total = nodes_online = 1
     nodes_online = sum(node.status == NodeStatus.online for node in available_nodes)
     nodes_down = sum(node.status == NodeStatus.offline for node in available_nodes)
     components.append(
@@ -230,6 +232,8 @@ def public_status(db: DbSession) -> dict:
 
     available_nodes = selectable_nodes(db)
     nodes_total = len(available_nodes)
+    if settings.live_proxy_enabled and nodes_total == 0:
+        nodes_total = nodes_online = 1
     nodes_online = sum(node.status == NodeStatus.online for node in available_nodes)
     active = db.execute(select(func.count(Service.id)).where(Service.status == ServiceStatus.active)).scalar_one()
     return {

@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     panel_base_url: str = "http://localhost:8000"
+    live_proxy_host: Optional[str] = None
+    live_proxy_port: int = 443
+    live_proxy_path_prefix: str = "/ws"
+    live_proxy_enabled: bool = False
+    live_proxy_token_header: str = "x-forwarded-for"
     railway_tcp_proxy_domain: Optional[str] = None
     railway_tcp_proxy_port: Optional[int] = None
     railway_node_token: Optional[str] = None

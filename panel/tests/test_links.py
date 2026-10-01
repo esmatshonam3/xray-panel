@@ -172,3 +172,16 @@ def test_format_bytes():
     assert format_bytes(1024) == "1.00 KB"
     assert format_bytes(1024 ** 3) == "1.00 GB"
     assert format_bytes(None) == "∞"
+
+
+def test_builtin_websocket_vless_link_uses_panel_domain(make_service, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "live_proxy_enabled", True)
+    monkeypatch.setattr(settings, "panel_base_url", "https://panel.example.com")
+    service = make_service(Protocol.vless, Transport.ws, Security.none)
+    link = build_link(service)
+    assert f"@panel.example.com:443" in link
+    assert f"path=%2Fws%2F{service.uuid}" in link
+    assert "security=tls" in link
+    assert f"host=panel.example.com" in link

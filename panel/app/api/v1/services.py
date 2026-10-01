@@ -30,6 +30,7 @@ from app.services.provisioning import (
     selectable_nodes,
     sync_inbound,
     eligible_inbounds,
+    uses_live_proxy,
 )
 from app.services.serializers import service_to_out
 from app.services.xray_links import build_link, qr_png
@@ -154,6 +155,9 @@ def create(payload: ServiceCreate, db: DbSession, actor: AdminUser) -> ServiceDe
             node_id=payload.node_id,
             duration_days=payload.duration_days,
             traffic_gb=payload.traffic_gb,
+            connection_limit=payload.connection_limit,
+            ip_limit=payload.ip_limit,
+            speed_limit_mbps=payload.speed_limit_mbps,
             expires_at=payload.expires_at,
             label=payload.label,
             note=payload.note,
@@ -254,6 +258,8 @@ def pull_usage(service_id: int, db: DbSession, actor: AdminUser) -> Message:
     service = db.get(Service, service_id)
     if service is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")
+    if uses_live_proxy(service.inbound):
+        return Message(detail="Usage is updated live by the built-in WebSocket relay")
     updated = collect_node_stats(db, service.node, reset=False)
     return Message(detail=f"Usage refreshed ({updated} services updated on node {service.node.name})")
 
