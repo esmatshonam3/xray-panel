@@ -356,8 +356,11 @@ def ensure_default_relay_endpoint(db) -> None:
                 public_port=443,
                 is_active=True,
                 is_default=True,
-            )
+        )
         db.add(inbound)
+        # Services below require the generated inbound primary key. Flush
+        # here so the migration never writes a transient NULL inbound_id.
+        db.flush()
     else:
         inbound.is_active = True
         inbound.is_default = True

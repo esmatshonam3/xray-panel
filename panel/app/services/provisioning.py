@@ -57,7 +57,9 @@ def eligible_inbounds(
     if node_id:
         stmt = stmt.where(Inbound.node_id == node_id)
     if settings.live_proxy_enabled:
-        stmt = stmt.join(Node, Inbound.node_id == Node.id).where(Node.name == "panel-websocket-relay")
+        # Node is already joined above. Rejoining the same table by name
+        # produces duplicate JOIN nodes and ambiguous columns on SQLite.
+        stmt = stmt.where(Node.name == "panel-websocket-relay")
     if plan:
         if plan.inbound_ids and not settings.live_proxy_enabled:
             stmt = stmt.where(Inbound.id.in_(plan.inbound_ids))

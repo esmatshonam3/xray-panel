@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.base import utcnow
+from app.db.base import as_utc, utcnow
 from app.db.models import Alert, AlertLevel, AlertSource, Node, NodeMetric, NodeStatus, User
 
 log = get_logger(__name__)
@@ -57,7 +57,7 @@ def raise_alert(
         existing.occurrences += 1
         existing.message = message or existing.message
         existing.updated_at = utcnow()
-        if existing.created_at and existing.created_at < cutoff:
+        if existing.created_at and as_utc(existing.created_at) < cutoff:
             existing.notified = False  # re-notify at most once per window
         alert = existing
     else:
