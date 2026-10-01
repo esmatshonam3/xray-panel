@@ -66,6 +66,11 @@ def eligible_inbounds(
             pass
     candidates = list(db.execute(stmt).unique().scalars())
 
+    # This panel is deployed with its Xray core as the Railway node-agent.
+    # Only WS inbounds can traverse Railway's public HTTPS listener without
+    # a separate raw TCP proxy, so don't sell links that cannot be reached.
+    candidates = [inbound for inbound in candidates if _can_advertise(inbound)]
+
     if plan and plan.node_group:
         candidates = [i for i in candidates if plan.node_group in (i.node.tags or [])]
 
@@ -87,6 +92,32 @@ def eligible_inbounds(
 
     usable.sort(key=lambda item: (item[0], item[1], -item[2].sort_order))
     return [item[2] for item in usable]
+
+
+def _can_advertise(inbound: Inbound) -> bool:
+    is_railway_agent = inbound.node.name == "railway-xray" or ".railway.internal" in inbound.node.address
+    if not is_railway_agent:
+        return True
+    if inbound.transport.value != "ws":
+        return False
+    return bool(
+        inbound.extra
+        and inbound.extra.get("railway_ws_tls")
+        and inbound.public_host
+        and inbound.public_host.lower().endswith(".up.railway.app")
+        and inbound.public_port == 443
+    )
+
+
+def selectable_nodes(db: Session, plan: Optional[Plan] = None) -> list[Node]:
+    """Return nodes that currently have an inbound usable for this plan."""
+    inbounds = eligible_inbounds(db, plan)
+    node_ids = {inbound.node_id for inbound in inbounds}
+    return list(
+        db.execute(
+            select(Node).where(Node.id.in_(node_ids), Node.is_active.is_(True)).order_by(Node.region, Node.name)
+        ).scalars()
+    ) if node_ids else []
 
 
 def pick_inbound(

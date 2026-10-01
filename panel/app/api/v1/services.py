@@ -27,12 +27,66 @@ from app.services.provisioning import (
     push_service,
     renew_service,
     set_status,
+    selectable_nodes,
     sync_inbound,
+    eligible_inbounds,
 )
 from app.services.serializers import service_to_out
 from app.services.xray_links import build_link, qr_png
 
 router = APIRouter(prefix="/services", tags=["services"])
+
+
+@router.get("/available-nodes")
+def list_config_nodes(db: DbSession, _: StaffUser, plan_id: Optional[int] = None) -> list[dict]:
+    """List selectable connection locations for the config-creation dialog."""
+    plan = db.get(Plan, plan_id) if plan_id else None
+    if plan_id and plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan not found")
+    return [
+        {"id": node.id, "name": node.name, "region": node.region, "status": node.status.value, "tags": node.tags or []}
+        for node in selectable_nodes(db, plan)
+    ]
+
+
+@router.get("/available-inbounds")
+def list_config_inbounds(
+    db: DbSession,
+    _: StaffUser,
+    plan_id: Optional[int] = None,
+    node_id: Optional[int] = None,
+) -> list[dict]:
+    """List protocol/transport endpoints filtered by the chosen location."""
+    plan = db.get(Plan, plan_id) if plan_id else None
+    if plan_id and plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan not found")
+    inbounds = eligible_inbounds(db, plan, node_id=node_id)
+    return [
+        {
+            "id": inbound.id,
+            "node_id": inbound.node_id,
+            "node_name": inbound.node.name,
+            "region": inbound.node.region,
+            "tag": inbound.tag,
+            "remark": inbound.remark,
+            "protocol": inbound.protocol.value,
+            "transport": inbound.transport.value,
+            "public_host": inbound.display_host,
+            "public_port": inbound.display_port,
+            "path": inbound.path,
+        }
+        for inbound in inbounds
+    ]
+
+
+@router.get("/connection-locations")
+def list_connection_locations(db: DbSession, _: CurrentUser) -> list[dict]:
+    """Expose configured locations without revealing node API addresses or tokens."""
+    nodes = selectable_nodes(db)
+    return [
+        {"id": node.id, "name": node.name, "region": node.region, "status": node.status.value}
+        for node in nodes
+    ]
 
 
 def _visible_scope(user: User):
@@ -83,6 +137,13 @@ def create(payload: ServiceCreate, db: DbSession, actor: AdminUser) -> ServiceDe
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan not found")
     if payload.inbound_id and inbound is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Inbound not found")
+    if payload.node_id and not eligible_inbounds(db, plan, node_id=payload.node_id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "No endpoint on the selected location matches this plan")
+    if inbound:
+        if inbound not in eligible_inbounds(db, plan, node_id=payload.node_id, inbound_id=inbound.id):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Selected endpoint is unavailable or does not match this plan")
+    if payload.node_id and inbound and inbound.node_id != payload.node_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Selected endpoint does not belong to the selected location")
 
     try:
         service = create_service(

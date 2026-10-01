@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from app.db.base import utcnow
 from app.db.models import Service, ServiceStatus, User
+from app.db.models import NodeStatus, Security, Transport
 from app.services.provisioning import (
     collect_node_stats,
     enforce_quota,
@@ -38,6 +39,31 @@ def test_create_service_returns_links(client, auth_headers, normal_user, inbound
     assert body["subscription_url"].endswith(body["subscription_url"].split("/")[-1])
     # The agent must have been asked to add the user.
     assert any("POST /users" in call[0] for call in mock_node_agent)
+
+
+def test_config_location_endpoints_only_offer_usable_railway_ws(client, auth_headers, node, inbound, plan, db):
+    node.name = "railway-xray"
+    node.address = "http://node-agent.railway.internal:8081"
+    node.status = NodeStatus.online
+    inbound.transport = Transport.ws
+    inbound.security = Security.none
+    inbound.path = "/vless"
+    inbound.public_host = "node-agent-production.up.railway.app"
+    inbound.public_port = 443
+    inbound.extra = {"railway_ws_tls": True}
+    db.commit()
+
+    locations = client.get("/api/v1/services/available-nodes", headers=auth_headers)
+    inbounds = client.get("/api/v1/services/available-inbounds", headers=auth_headers)
+    assert locations.status_code == 200
+    assert len(locations.json()) == 1
+    assert inbounds.status_code == 200
+    assert len(inbounds.json()) == 1
+    assert inbounds.json()[0]["transport"] == "ws"
+
+    inbound.extra = {}
+    db.commit()
+    assert client.get("/api/v1/services/available-nodes", headers=auth_headers).json() == []
 
 
 def test_create_service_without_plan_or_inbound_fails(client, auth_headers, normal_user):

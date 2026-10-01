@@ -101,13 +101,9 @@
       <div class="nav-item" data-page="plans"><i data-icon="tag"></i><span data-i18n="nav.plans">پلن‌ها</span></div>
       <div class="nav-item" data-page="payments" data-staff="1"><i data-icon="card"></i><span data-i18n="nav.payments">پرداخت‌ها</span><span class="count" id="nav-payments-count" hidden></span></div>
 
-      <div class="nav-group" data-i18n="nav.group.infra">زیرساخت</div>
-      <div class="nav-item" data-page="nodes" data-staff="1"><i data-icon="server"></i><span data-i18n="nav.nodes">نودها</span></div>
-      <div class="nav-item" data-page="inbounds" data-staff="1"><i data-icon="plug"></i><span data-i18n="nav.inbounds">اینباندها</span></div>
       <div class="nav-item" data-page="telegram" data-staff="1"><i data-icon="send"></i><span data-i18n="nav.telegram">ربات تلگرام</span></div>
 
       <div class="nav-group" data-i18n="nav.group.ops">عملیات</div>
-      <div class="nav-item" data-page="health" data-staff="1"><i data-icon="activity"></i><span data-i18n="nav.health">سلامت سرویس</span></div>
       <div class="nav-item" data-page="alerts" data-staff="1"><i data-icon="bell"></i><span data-i18n="nav.alerts">هشدارها</span><span class="count" id="nav-alerts-count" hidden></span></div>
       <div class="nav-item" data-page="logs" data-staff="1"><i data-icon="scroll"></i><span data-i18n="nav.logs">لاگ حسابرسی</span></div>
       <div class="nav-item" data-page="settings" data-staff="1"><i data-icon="sliders"></i><span data-i18n="nav.settings">تنظیمات</span></div>
@@ -161,7 +157,7 @@
 
       <!-- ==================================================== dashboard -->
       <section class="page" id="page-dashboard">
-        <div class="grid cols-4 stagger" id="stat-cards"></div>
+        <div class="grid cols-3 stagger" id="stat-cards"></div>
         <div class="grid cols-2" style="margin-block-start:16px">
           <div class="card">
             <div class="card-head">
@@ -188,10 +184,10 @@
           </div>
           <div class="card">
             <div class="card-head">
-              <i data-icon="server"></i>
-              <h3 data-i18n="dashboard.nodesPanel">وضعیت نودها</h3>
+              <i data-icon="layers"></i>
+              <h3 data-i18n="dashboard.configs">کانفیگ‌ها</h3>
             </div>
-            <div id="dash-nodes"></div>
+            <div id="dash-configs-summary"></div>
           </div>
         </div>
       </section>
@@ -276,26 +272,6 @@
         <div class="table-wrap"><div class="table-scroll"><table id="pay-table"></table></div></div>
       </section>
 
-      <!-- ======================================================== nodes -->
-      <section class="page" id="page-nodes">
-        <div class="toolbar">
-          <span class="spacer"></span>
-          <button class="btn sm" id="node-railway-setup" type="button" data-staff="1"><i data-icon="server" data-icon-size="15"></i><span data-i18n="nodes.railwaySetup">اتصال Agent روی Railway</span></button>
-          <button class="btn primary sm" id="node-create"><i data-icon="plus" data-icon-size="15"></i><span data-i18n="nodes.add">افزودن نود</span></button>
-        </div>
-        <div class="grid cols-3 stagger" id="node-grid"></div>
-      </section>
-
-      <!-- ===================================================== inbounds -->
-      <section class="page" id="page-inbounds">
-        <div class="toolbar">
-          <select id="inb-node"><option value="" data-i18n="inbounds.allNodes">همه نودها</option></select>
-          <span class="spacer"></span>
-          <button class="btn primary sm" id="inb-create"><i data-icon="plus" data-icon-size="15"></i><span data-i18n="inbounds.new">اینباند جدید</span></button>
-        </div>
-        <div class="table-wrap"><div class="table-scroll"><table id="inb-table"></table></div></div>
-      </section>
-
       <!-- ====================================================== reports -->
       <section class="page" id="page-reports">
         <div class="grid cols-2">
@@ -323,16 +299,6 @@
           </div>
         </div>
       </section>
-
-      <!-- ======================================================= health -->
-      <section class="page" id="page-health">
-        <div class="toolbar">
-          <span class="spacer"></span>
-          <button class="btn sm" id="health-reload"><i data-icon="refresh" data-icon-size="15"></i><span data-i18n="health.rerun">اجرای مجدد</span></button>
-        </div>
-        <div class="grid cols-2" id="health-cards"></div>
-      </section>
-
       <!-- ======================================================= alerts -->
       <section class="page" id="page-alerts">
         <div class="toolbar">

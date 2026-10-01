@@ -40,6 +40,7 @@ def create_order(
     method: PaymentMethod = PaymentMethod.manual,
     purpose: str = "purchase",
     service: Optional[Service] = None,
+    node_id: Optional[int] = None,
     receipt_url: Optional[str] = None,
     receipt_file_id: Optional[str] = None,
     meta: Optional[dict[str, Any]] = None,
@@ -62,7 +63,7 @@ def create_order(
         receipt_url=receipt_url,
         receipt_file_id=receipt_file_id,
         paid_at=utcnow() if auto_complete else None,
-        meta=meta or {},
+        meta={**(meta or {}), **({"node_id": node_id} if node_id else {})},
     )
     if method == PaymentMethod.manual and receipt_url and not auto_complete:
         payment.status = PaymentStatus.awaiting_review
@@ -129,6 +130,7 @@ def fulfil_payment(
                 db,
                 user=user,
                 plan=plan,
+                node_id=(payment.meta or {}).get("node_id"),
                 duration_days=plan.duration_days if plan else None,
                 traffic_gb=plan.traffic_gb if plan else None,
                 actor_id=actor_id,
@@ -179,7 +181,14 @@ def reject_payment(
     return payment
 
 
-def pay_from_balance(db: Session, *, user: User, plan: Plan, service: Optional[Service] = None) -> Payment:
+def pay_from_balance(
+    db: Session,
+    *,
+    user: User,
+    plan: Plan,
+    service: Optional[Service] = None,
+    node_id: Optional[int] = None,
+) -> Payment:
     if user.balance < plan.price:
         raise BillingError("insufficient balance")
     user.balance -= plan.price
@@ -190,6 +199,7 @@ def pay_from_balance(db: Session, *, user: User, plan: Plan, service: Optional[S
         method=PaymentMethod.balance,
         purpose="renewal" if service else "purchase",
         service=service,
+        node_id=node_id,
         auto_complete=True,
     )
 

@@ -41,7 +41,7 @@ def ready(db: DbSession) -> dict:
 
 @router.get("/health", response_model=HealthReport)
 def deep_health(db: DbSession, _: StaffUser) -> HealthReport:
-    """Deep health: database, scheduler, nodes and alert backlog."""
+    """Deep health: database, scheduler, connection endpoints and alert backlog."""
     components: list[HealthComponent] = []
 
     started = time.perf_counter()
@@ -64,12 +64,15 @@ def deep_health(db: DbSession, _: StaffUser) -> HealthReport:
         )
     )
 
-    nodes_total = db.execute(select(func.count(Node.id))).scalar_one()
-    nodes_online = db.execute(select(func.count(Node.id)).where(Node.status == NodeStatus.online)).scalar_one()
-    nodes_down = db.execute(select(func.count(Node.id)).where(Node.status == NodeStatus.offline)).scalar_one()
+    from app.services.provisioning import selectable_nodes
+
+    available_nodes = selectable_nodes(db)
+    nodes_total = len(available_nodes)
+    nodes_online = sum(node.status == NodeStatus.online for node in available_nodes)
+    nodes_down = sum(node.status == NodeStatus.offline for node in available_nodes)
     components.append(
         HealthComponent(
-            name="nodes",
+            name="connections",
             status="down" if (nodes_total and nodes_online == 0) else ("degraded" if nodes_down else "ok"),
             detail=f"{nodes_online}/{nodes_total} online",
         )
@@ -223,8 +226,11 @@ def node_metrics(
 @router.get("/status", response_model=dict)
 def public_status(db: DbSession) -> dict:
     """Aggregate, non-sensitive status banner for the login page."""
-    nodes_total = db.execute(select(func.count(Node.id))).scalar_one()
-    nodes_online = db.execute(select(func.count(Node.id)).where(Node.status == NodeStatus.online)).scalar_one()
+    from app.services.provisioning import selectable_nodes
+
+    available_nodes = selectable_nodes(db)
+    nodes_total = len(available_nodes)
+    nodes_online = sum(node.status == NodeStatus.online for node in available_nodes)
     active = db.execute(select(func.count(Service.id)).where(Service.status == ServiceStatus.active)).scalar_one()
     return {
         "app": settings.app_name,
@@ -233,6 +239,6 @@ def public_status(db: DbSession) -> dict:
         "nodes_total": nodes_total,
         "nodes_online": nodes_online,
         "services_active": active,
-        "status": "operational" if (not nodes_total or nodes_online) else "degraded",
+        "status": "operational" if nodes_online else ("degraded" if nodes_total else "offline"),
         "checked_at": utcnow().isoformat(),
     }

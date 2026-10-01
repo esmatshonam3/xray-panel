@@ -441,6 +441,7 @@ class ServiceBulkAction(BaseModel):
 # --------------------------------------------------------------------------- #
 class PaymentCreate(BaseModel):
     plan_id: int
+    node_id: Optional[int] = None
     method: PaymentMethod = PaymentMethod.manual
     purpose: Literal["purchase", "renewal"] = "purchase"
     service_id: Optional[int] = None

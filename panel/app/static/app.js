@@ -359,14 +359,13 @@
 
   Pages.dashboard = async ({ silent } = {}) => {
     if (!silent) {
-      $('#stat-cards').innerHTML = Array.from({ length: 4 }, () => '<div class="skeleton sk-card"></div>').join('');
+      $('#stat-cards').innerHTML = Array.from({ length: 5 }, () => '<div class="skeleton sk-card"></div>').join('');
     }
-    const [stats, traffic, top, alerts, nodes] = await Promise.all([
+    const [stats, traffic, top, alerts] = await Promise.all([
       api('/reports/dashboard'),
       api('/reports/traffic?days=30'),
       api('/reports/top-consumers?limit=6'),
       isStaff() ? api('/alerts?limit=5').catch(() => []) : Promise.resolve([]),
-      api('/nodes?size=8').catch(() => ({ items: [] })),
     ]);
 
     const cards = [
@@ -376,10 +375,6 @@
       { icon: 'layers', tone: '', label: t('dashboard.configs'), value: stats.services_total,
         sub: t('dashboard.configsSub', { active: num(stats.services_active), expiring: num(stats.services_expiring_7d) }),
         fmt: (v) => num(Math.round(v)) },
-      { icon: 'server', tone: stats.nodes_total && stats.nodes_online === stats.nodes_total ? 'ok' : 'warn',
-        label: t('dashboard.nodes'), value: stats.nodes_online,
-        sub: t('dashboard.nodesSub', { online: num(stats.nodes_online), total: num(stats.nodes_total) }),
-        fmt: (v) => `${num(Math.round(v))}/${num(stats.nodes_total)}` },
       { icon: 'wifi', tone: 'info', label: t('dashboard.trafficToday'), value: stats.traffic_today_bytes,
         sub: `${t('dashboard.traffic30')}: ${bytes(stats.traffic_month_bytes)}`, fmt: (v) => bytes(v) },
       { icon: 'wallet', tone: 'ok', label: t('dashboard.revenue'), value: stats.revenue_month,
@@ -419,17 +414,8 @@
         </div>`).join('')
       : emptyState('check', t('dashboard.noAlerts'));
 
-    $('#dash-nodes').innerHTML = nodes.items?.length
-      ? nodes.items.map((n) => `<div class="list-row">
-          ${badge(n.status)}
-          <div class="grow"><div class="title">${esc(n.name)}</div>
-          <div class="meta">${esc(n.region || '—')} · ${num(n.service_count)} ${t('users.configs')}</div></div>
-          <div style="text-align:end;min-width:74px">
-            <div class="mono" style="font-size:11.5px">CPU ${num(Math.round(n.cpu_percent || 0))}%</div>
-            <div class="bar" style="margin-block-start:4px"><i style="width:${Math.min(n.cpu_percent || 0, 100)}%"></i></div>
-          </div>
-        </div>`).join('')
-      : emptyState('server', t('dashboard.noNodes'));
+    $('#dash-configs-summary').innerHTML = `<div class="list-row"><div class="grow"><div class="title">${num(stats.services_active)} ${esc(t('dashboard.configs'))}</div><div class="meta">${t('dashboard.configsSub', { active: num(stats.services_active), expiring: num(stats.services_expiring_7d) })}</div></div><button class="btn sm" id="dash-open-configs">${t('common.manage')}</button></div>`;
+    $('#dash-open-configs').onclick = () => navigate('configs');
   };
 
   /* --------------------------------------------------------------- configs */
@@ -606,6 +592,7 @@
       <div class="field-row">
         <div><label class="field">${t('configs.user')}</label><select id="cs-user"><option value="">${t('common.loading')}</option></select></div>
         <div><label class="field">${t('plans.title')} <span class="hint">${t('common.optional')}</span></label><select id="cs-plan"><option value="">${t('common.auto')}</option></select></div>
+        <div><label class="field">${t('common.node')} <span class="hint">${t('common.optional')}</span></label><select id="cs-node"><option value="">${t('common.auto')}</option></select></div>
         <div><label class="field">${t('inbounds.title')} <span class="hint">${t('common.optional')}</span></label><select id="cs-inbound"><option value="">${t('common.auto')}</option></select></div>
         <div><label class="field">${t('configs.label')}</label><input id="cs-label" placeholder="config"></div>
         <div><label class="field">${t('configs.durationDays')}</label><input id="cs-days" type="number"></div>
@@ -625,6 +612,7 @@
                 body: {
                   user_id: Number($('#cs-user').value),
                   plan_id: $('#cs-plan').value ? Number($('#cs-plan').value) : null,
+                  node_id: $('#cs-node').value ? Number($('#cs-node').value) : null,
                   inbound_id: $('#cs-inbound').value ? Number($('#cs-inbound').value) : null,
                   label: $('#cs-label').value || null,
                   duration_days: $('#cs-days').value ? Number($('#cs-days').value) : null,
@@ -636,16 +624,46 @@
           },
         },
       ]);
-    Promise.all([api('/users?size=100'), api('/plans?size=100&include_inactive=true'), api('/inbounds')]).then(([users, plans, inbounds]) => {
+    Promise.all([api('/users?size=100'), api('/plans?size=100&include_inactive=true')]).then(([users, plans]) => {
       const userSelect = $('#cs-user');
       const planSelect = $('#cs-plan');
+      const nodeSelect = $('#cs-node');
       const inboundSelect = $('#cs-inbound');
       if (!userSelect) return;
       users.items.forEach((u) => userSelect.insertAdjacentHTML('beforeend', `<option value="${u.id}">${esc(u.username)} · #${u.id}</option>`));
       plans.items.forEach((p) => planSelect.insertAdjacentHTML('beforeend', `<option value="${p.id}">${esc(p.name)} · #${p.id}</option>`));
-      inbounds.forEach((i) => inboundSelect.insertAdjacentHTML('beforeend', `<option value="${i.id}">${esc(i.remark || i.tag)} · #${i.id}</option>`));
+      const loadEndpoints = async () => {
+        const selectedPlanId = planSelect.value || '';
+        const previousNode = nodeSelect.value;
+        const previousInbound = inboundSelect.value;
+        nodeSelect.innerHTML = `<option value="">${esc(t('common.auto'))}</option>`;
+        inboundSelect.innerHTML = `<option value="">${esc(t('common.auto'))}</option>`;
+        try {
+          const query = selectedPlanId ? `?plan_id=${selectedPlanId}` : '';
+          const nodes = await api(`/services/available-nodes${query}`);
+          const inbounds = await api(`/services/available-inbounds${query}`);
+          nodes.forEach((n) => nodeSelect.insertAdjacentHTML('beforeend', `<option value="${n.id}">${esc(n.region || n.name)} · ${esc(n.name)}</option>`));
+          inbounds.forEach((i) => inboundSelect.insertAdjacentHTML('beforeend', `<option value="${i.id}" data-node-id="${i.node_id}">${esc(i.region || i.node_name)} · ${esc(i.remark || i.tag)} · ${esc(i.protocol.toUpperCase())}/${esc(i.transport.toUpperCase())}</option>`));
+          if (Array.from(nodeSelect.options).some((o) => o.value === previousNode)) nodeSelect.value = previousNode;
+          if (Array.from(inboundSelect.options).some((o) => o.value === previousInbound)) inboundSelect.value = previousInbound;
+          applyFilters();
+          if (!inbounds.length) $('#cs-prereq').textContent = t('configs.noInbounds');
+        } catch (err) { $('#cs-prereq').textContent = err.message; }
+      };
+      const applyFilters = () => {
+        const selectedNode = nodeSelect.value;
+        Array.from(inboundSelect.options).forEach((option) => {
+          if (!option.value) return;
+          const enabled = !selectedNode || Number(option.dataset.nodeId) === Number(selectedNode);
+          option.hidden = !enabled;
+          option.disabled = !enabled;
+        });
+        if (inboundSelect.selectedOptions[0]?.disabled) inboundSelect.value = '';
+      };
+      nodeSelect.onchange = () => applyFilters();
+      planSelect.onchange = loadEndpoints;
+      loadEndpoints();
       if (!users.items.length) $('#cs-prereq').textContent = t('configs.noUsers');
-      else if (!inbounds.length) $('#cs-prereq').textContent = t('configs.noInbounds');
     }).catch((err) => { const hint = $('#cs-prereq'); if (hint) hint.textContent = err.message; });
   }
 
@@ -938,313 +956,6 @@
     });
   };
 
-  /* ----------------------------------------------------------------- nodes */
-  Pages.nodes = async () => {
-    const data = await api('/nodes?size=100');
-    const grid = $('#node-grid');
-    if (!data.items.length) {
-      grid.innerHTML = `<div class="card" style="grid-column:1/-1">${emptyState('server', t('nodes.noNodes'), t('nodes.addFirst'))}</div>`;
-      return;
-    }
-    grid.innerHTML = data.items.map((n, i) => `
-      <div class="card hoverable" style="--i:${i}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-          <div>
-            <h3 style="font-size:15px">${esc(n.name)}</h3>
-            <div class="mono" style="color:var(--text-mute);font-size:11px">${esc(n.public_host)} · ${esc(n.region || '—')}</div>
-          </div>
-          ${badge(n.status)}
-        </div>
-        <div class="sep"></div>
-        <dl class="kv">
-          <dt>${t('nodes.address')}</dt><dd class="mono" style="font-size:11.5px">${esc(n.address)}</dd>
-          <dt>${t('nodes.xrayVersion')}</dt><dd>${esc(n.xray_version || t('common.unknown'))}</dd>
-          <dt>${t('users.configs')}</dt><dd>${num(n.service_count)}${n.max_services ? ` / ${num(n.max_services)}` : ''}</dd>
-          <dt>${t('nodes.heartbeat')}</dt><dd>${relative(n.last_heartbeat_at)}</dd>
-        </dl>
-        <div style="margin-block-start:12px;display:grid;gap:8px">
-          ${[['CPU', n.cpu_percent], ['RAM', n.memory_percent], ['Disk', n.disk_percent]].map(([label, v]) => `
-            <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-size:11px;color:var(--text-mute);width:34px">${label}</span>
-              <span class="bar" style="flex:1"><i style="width:${Math.min(v || 0, 100)}%"></i></span>
-              <span class="mono" style="font-size:11px;width:40px;text-align:end">${num(Math.round(v || 0))}%</span>
-            </div>`).join('')}
-        </div>
-        ${n.last_error ? `<div class="sub" style="color:var(--danger);margin-block-start:10px;font-size:11.5px">${esc(n.last_error)}</div>` : ''}
-        <div style="margin-block-start:14px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn sm" data-nact="health" data-id="${n.id}">${window.icon('activity', { size: 14 })}<span>${t('nodes.health')}</span></button>
-          <button class="btn sm" data-nact="sync" data-id="${n.id}">${window.icon('refresh', { size: 14 })}<span>${t('nodes.sync')}</span></button>
-          <button class="btn sm" data-nact="restart" data-id="${n.id}">${window.icon('power', { size: 14 })}</button>
-          <button class="btn sm" data-nact="token" data-id="${n.id}">${window.icon('key', { size: 14 })}</button>
-        </div>
-      </div>`).join('');
-    window.hydrateIcons(grid);
-
-    $$('#node-grid [data-nact]').forEach((btn) => {
-      btn.onclick = async () => {
-        const id = btn.dataset.id;
-        const act = btn.dataset.nact;
-        try {
-          if (act === 'health') {
-            const h = await api(`/nodes/${id}/health`);
-            openModal(t('nodes.healthTitle', { name: h.name }), `
-              <dl class="kv">
-                <dt>${t('common.status')}</dt><dd>${badge(h.status)} ${h.reachable ? `<span class="chip">${num(h.latency_ms || 0)} ms</span>` : ''}</dd>
-                <dt>Xray</dt><dd>${h.xray_running ? badge('online') : badge('offline')} ${esc(h.xray_version || '')}</dd>
-                <dt>CPU</dt><dd>${num(Math.round(h.cpu_percent || 0))}%</dd>
-                <dt>RAM</dt><dd>${num(Math.round(h.memory_percent || 0))}%</dd>
-                <dt>Disk</dt><dd>${num(Math.round(h.disk_percent || 0))}%</dd>
-                <dt>${t('health.uptime')}</dt><dd>${relative(new Date(Date.now() - (h.uptime_seconds || 0) * 1000))}</dd>
-                ${h.error ? `<dt>${t('common.unknown')}</dt><dd style="color:var(--danger)">${esc(h.error)}</dd>` : ''}
-              </dl>`, [{ label: t('common.close'), onClick: closeModal }]);
-          } else if (act === 'sync') {
-            btn.classList.add('loading');
-            const r = await api(`/nodes/${id}/sync`, { method: 'POST' });
-            toast(r.ok ? t('nodes.synced', { n: num(r.applied) }) : t('nodes.syncFailed', { error: r.error || '' }), r.ok ? 'ok' : 'err');
-            Pages.nodes();
-          } else if (act === 'restart') {
-            btn.classList.add('loading');
-            await api(`/nodes/${id}/restart-xray`, { method: 'POST' });
-            toast(t('nodes.restarted'), 'ok');
-            Pages.nodes();
-          } else {
-            const r = await api(`/nodes/${id}/rotate-token`, { method: 'POST' });
-            openModal(t('nodes.newToken'), `
-              <p style="color:var(--text-dim);font-size:13px">${esc(t('nodes.newTokenHint'))}</p>
-              <div class="copy-box">
-                <input readonly id="ntok" value="${esc(r.api_token)}">
-                <button class="btn sm" data-copy-target="ntok">${window.icon('copy', { size: 14 })}</button>
-              </div>`, [{ label: t('common.close'), onClick: closeModal }]);
-            bindCopyButtons($('#modal-body'));
-          }
-        } catch (err) { toast(err.message, 'err'); btn.classList.remove('loading'); }
-      };
-    });
-  };
-
-  function nodeCreateDialog() {
-    openModal(t('nodes.add'), `
-      <div class="field-row">
-        <div><label class="field">${t('common.name')}</label><input id="nn-name" placeholder="eu-1"></div>
-        <div><label class="field">${t('nodes.region')}</label><input id="nn-region" placeholder="EU"></div>
-        <div><label class="field">${t('nodes.address')}</label><input id="nn-address" placeholder="https://node1.example.com:8081"></div>
-        <div><label class="field">${t('nodes.publicHost')}</label><input id="nn-host" placeholder="node1.example.com"></div>
-        <div><label class="field">${t('nodes.apiToken')}</label><input id="nn-token" placeholder="nd_..."></div>
-        <div><label class="field">${t('nodes.maxServices')}</label><input id="nn-max" type="number" value="0"></div>
-      </div>
-      <label class="field">${t('nodes.tags')}</label><input id="nn-tags" placeholder="eu,default">
-      <div id="nn-prereq" class="hint" style="display:block;margin-block-start:14px">${esc(t('nodes.railwayHint'))}</div>`,
-      [
-        { label: t('common.cancel'), onClick: closeModal },
-        {
-          label: t('nodes.add'), kind: 'primary', icon: 'plus',
-          onClick: async (btn) => {
-            btn.classList.add('loading');
-            try {
-              await api('/nodes', {
-                method: 'POST',
-                body: {
-                  name: $('#nn-name').value,
-                  region: $('#nn-region').value || null,
-                  address: $('#nn-address').value.trim(),
-                  public_host: $('#nn-host').value,
-                  api_token: $('#nn-token').value,
-                  max_services: Number($('#nn-max').value),
-                  tags: $('#nn-tags').value.split(',').map((s) => s.trim()).filter(Boolean),
-                },
-              });
-              closeModal(); toast(t('nodes.added'), 'ok'); Pages.nodes();
-            } catch (err) { toast(err.message, 'err'); btn.classList.remove('loading'); }
-          },
-        },
-      ]);
-    api('/status').then((status) => {
-      if (!status.nodes_total) return;
-      const hint = $('#nn-prereq');
-      if (hint) hint.textContent = t('nodes.railwayHint');
-    }).catch(() => {});
-  }
-
-  function railwayNodeDialog() {
-    openModal(t('nodes.railwaySetup'), `<p>${esc(t('nodes.railwayHint'))}</p>
-      <p style="margin-block-start:12px;color:var(--text-mute)">${esc(t('nodes.railwayVariables'))}</p>`, [
-      { label: t('common.cancel'), onClick: closeModal },
-      { label: t('nodes.railwayRegister'), kind: 'primary', icon: 'server', onClick: async (btn) => {
-        btn.classList.add('loading');
-        try {
-          await api('/nodes/railway', { method: 'POST' });
-          closeModal(); toast(t('nodes.railwayRegistered'), 'ok'); Pages.nodes();
-        } catch (err) { toast(err.message, 'err'); btn.classList.remove('loading'); }
-      } },
-    ]);
-  }
-
-  /* -------------------------------------------------------------- inbounds */
-  Pages.inbounds = async () => {
-    const nodes = await api('/nodes?size=100');
-    const sel = $('#inb-node');
-    if (sel.options.length <= 1) {
-      nodes.items.forEach((n) => sel.insertAdjacentHTML('beforeend', `<option value="${n.id}">${esc(n.name)}</option>`));
-    }
-    const nodeId = sel.value;
-    const table = $('#inb-table');
-    table.innerHTML = skeletonRows(4);
-    const rows = await api(`/inbounds${nodeId ? `?node_id=${nodeId}` : ''}`);
-
-    if (!rows.length) {
-      table.innerHTML = `<tbody><tr><td>${emptyState('plug', t('common.empty'))}</td></tr></tbody>`;
-      return;
-    }
-    table.innerHTML = `
-      <thead><tr><th>${t('inbounds.tag')}</th><th>${t('common.node')}</th><th>${t('common.protocol')}</th>
-      <th>${t('inbounds.transport')}</th><th>${t('inbounds.security')}</th><th>${t('inbounds.port')}</th>
-      <th>${t('inbounds.clients')}</th><th>${t('common.status')}</th><th style="width:150px">${t('common.actions')}</th></tr></thead>
-      <tbody>${rows.map((i) => `
-        <tr>
-          <td><b>${esc(i.tag)}</b><div class="sub">${esc(i.remark || '')}</div></td>
-          <td>${esc(nodes.items.find((n) => n.id === i.node_id)?.name || i.node_id)}</td>
-          <td><span class="chip mono">${esc(i.protocol)}</span></td>
-          <td>${esc(i.transport)}</td>
-          <td>${esc(i.security)}</td>
-          <td class="mono" title="Internal Xray port: ${num(i.port)}">${num(i.public_port || i.port)}${i.public_port && i.public_port !== i.port ? ` <small style="color:var(--text-mute)">(internal ${num(i.port)})</small>` : ''}</td>
-          <td>${num(i.service_count)}</td>
-          <td>${i.is_active ? badge('active') : badge('disabled')}</td>
-          <td><div class="cell-actions">
-            <button class="btn sm" data-iact="edit" data-id="${i.id}" title="Edit inbound">${window.icon('edit', { size: 14 })}</button>
-            <button class="btn sm" data-iact="validate" data-id="${i.id}">${window.icon('shield', { size: 14 })}</button>
-            <button class="btn sm" data-iact="sync" data-id="${i.id}">${window.icon('refresh', { size: 14 })}</button>
-          </div></td>
-        </tr>`).join('')}</tbody>`;
-    window.hydrateIcons(table);
-
-    $$('#inb-table [data-iact]').forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          if (btn.dataset.iact === 'edit') {
-            const item = rows.find((row) => row.id === Number(btn.dataset.id));
-            if (!item) return;
-            inboundEditDialog(item);
-          } else if (btn.dataset.iact === 'validate') {
-            const r = await api(`/inbounds/${btn.dataset.id}/validate`);
-            openModal(t('inbounds.validationTitle'), `
-              <p>${r.ok ? badge('ok') : badge('failed')}</p>
-              ${r.errors.length ? `<h4 style="margin-block:12px 6px;font-size:13px;color:var(--danger)">${t('inbounds.errors')}</h4>
-                <ul style="margin:0;padding-inline-start:18px;font-size:13px">${r.errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
-              ${r.warnings.length ? `<h4 style="margin-block:12px 6px;font-size:13px;color:var(--warn)">${t('inbounds.warnings')}</h4>
-                <ul style="margin:0;padding-inline-start:18px;font-size:13px">${r.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}`,
-              [{ label: t('common.close'), onClick: closeModal }]);
-          } else {
-            const r = await api(`/inbounds/${btn.dataset.id}/sync`, { method: 'POST' });
-            toast(r.detail, 'ok');
-          }
-        } catch (err) { toast(err.message, 'err'); }
-      };
-    });
-  };
-
-  function inboundEditDialog(item) {
-    openModal(`Edit inbound · ${esc(item.tag)}`, `
-      <div class="field-row">
-        <div><label class="field">Internal Xray port</label><input id="ie-port" type="number" value="${num(item.port)}"></div>
-        <div><label class="field">Transport</label><select id="ie-net">
-          ${['tcp','ws','grpc','httpupgrade','xhttp'].map((x) => `<option ${item.transport === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-        <div><label class="field">Xray security</label><select id="ie-sec">
-          ${['none','tls','reality'].map((x) => `<option ${item.security === x ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-        <div><label class="field">Path / serviceName</label><input id="ie-path" value="${esc(item.path || '')}"></div>
-        <div><label class="field">Public host override</label><input id="ie-host" value="${esc(item.public_host || '')}" placeholder="node-agent-….up.railway.app"></div>
-        <div><label class="field">Public port override</label><input id="ie-public-port" type="number" value="${num(item.public_port || item.port)}"></div>
-        <div><label class="field">WebSocket host header</label><input id="ie-host-header" value="${esc(item.host_header || '')}"></div>
-        <div><label class="field">SNI (direct TLS only)</label><input id="ie-sni" value="${esc(item.sni || '')}"></div>
-      </div>
-      <p style="color:var(--text-mute);font-size:12px;margin-block-start:12px">For Railway HTTP-domain WebSocket mode, use transport WS, Xray security none, public port 443, and the node-agent Railway domain.</p>`, [
-      { label: t('common.cancel'), onClick: closeModal },
-      { label: t('common.save'), kind: 'primary', icon: 'check', onClick: async (button) => {
-        button.classList.add('loading');
-        const body = {
-          port: Number($('#ie-port').value),
-          transport: $('#ie-net').value,
-          security: $('#ie-sec').value,
-          path: $('#ie-path').value || '/',
-          public_host: $('#ie-host').value.trim() || null,
-          public_port: Number($('#ie-public-port').value) || null,
-          host_header: $('#ie-host-header').value.trim() || null,
-          sni: $('#ie-sni').value.trim() || null,
-        };
-        try {
-          const result = await api(`/inbounds/${item.id}`, { method: 'PATCH', body });
-          closeModal(); toast(result.sync_error || 'Inbound saved and synced', result.sync_error ? 'err' : 'ok'); Pages.inbounds();
-        } catch (err) { toast(err.message, 'err'); button.classList.remove('loading'); }
-      } },
-    ]);
-  }
-
-  function inboundCreateDialog() {
-    openModal(t('inbounds.createTitle'), `
-      <div class="field-row">
-        <div><label class="field">${t('common.node')}</label><select id="ni-node"><option value="">${t('common.loading')}</option></select></div>
-        <div><label class="field">${t('inbounds.tag')}</label><input id="ni-tag" placeholder="vless-reality"></div>
-        <div><label class="field">${t('common.protocol')}</label><select id="ni-proto">
-          <option>vless</option><option>vmess</option><option>trojan</option><option>shadowsocks</option></select></div>
-        <div><label class="field">${t('inbounds.port')}</label><input id="ni-port" type="number" value="443"></div>
-        <div><label class="field">${t('inbounds.transport')}</label><select id="ni-net">
-          <option>tcp</option><option>ws</option><option>grpc</option><option>httpupgrade</option><option>xhttp</option></select></div>
-        <div><label class="field">${t('inbounds.security')}</label><select id="ni-sec">
-          <option>none</option><option>tls</option><option>reality</option></select></div>
-        <div><label class="field">SNI</label><input id="ni-sni"></div>
-        <div><label class="field">Path / serviceName</label><input id="ni-path"></div>
-        <div><label class="field">Public host override</label><input id="ni-host" placeholder="node-agent-….up.railway.app"></div>
-        <div><label class="field">Public port override</label><input id="ni-public-port" type="number" placeholder="443"></div>
-        <div><label class="field">Flow</label><input id="ni-flow" placeholder="xtls-rprx-vision"></div>
-        <div><label class="field">Reality public key</label><input id="ni-pbk"></div>
-        <div><label class="field">Reality private key</label><input id="ni-pvk"></div>
-        <div><label class="field">Reality short id</label><input id="ni-sid"></div>
-      </div>
-      <p id="ni-prereq" style="color:var(--text-mute);font-size:12px;margin-block-start:12px">${esc(t('inbounds.realityKeysHint'))}</p>`,
-      [
-        { label: t('common.cancel'), onClick: closeModal },
-        {
-          label: t('common.create'), kind: 'primary', icon: 'plus',
-          onClick: async (btn) => {
-            if (!$('#ni-node').value) { toast(t('inbounds.noNodes'), 'err'); return; }
-            btn.classList.add('loading');
-            const net = $('#ni-net').value;
-            const body = {
-              node_id: Number($('#ni-node').value),
-              tag: $('#ni-tag').value,
-              protocol: $('#ni-proto').value,
-              port: Number($('#ni-port').value),
-              transport: net,
-              security: $('#ni-sec').value,
-              public_host: $('#ni-host').value.trim() || null,
-              public_port: Number($('#ni-public-port').value) || null,
-              sni: $('#ni-sni').value || null,
-              flow: $('#ni-flow').value || null,
-              reality_public_key: $('#ni-pbk').value || null,
-              reality_private_key: $('#ni-pvk').value || null,
-              reality_short_ids: $('#ni-sid').value ? [$('#ni-sid').value] : [],
-            };
-            if (net === 'grpc') body.service_name = $('#ni-path').value || 'grpc';
-            else body.path = $('#ni-path').value || '/';
-            try {
-              await api('/inbounds', { method: 'POST', body });
-              closeModal(); toast(t('inbounds.created'), 'ok'); Pages.inbounds();
-            } catch (err) { toast(err.message, 'err'); btn.classList.remove('loading'); }
-          },
-        },
-      ]);
-    api('/nodes?size=100').then((nodes) => {
-      const select = $('#ni-node');
-      if (!select) return;
-      select.innerHTML = `<option value="">${esc(t('common.select'))}</option>`;
-      nodes.items.forEach((n) => select.insertAdjacentHTML('beforeend', `<option value="${n.id}">${esc(n.name)} · #${n.id}</option>`));
-      if (!nodes.items.length) {
-        const hint = $('#ni-prereq');
-        hint.innerHTML = `${esc(t('inbounds.noNodes'))} <button type="button" class="btn sm" id="ni-add-node">${esc(t('nodes.add'))}</button>`;
-        $('#ni-add-node').onclick = () => { closeModal(); nodeCreateDialog(); };
-      }
-    }).catch((err) => { const hint = $('#ni-prereq'); if (hint) hint.textContent = err.message; });
-  }
-
   /* --------------------------------------------------------------- reports */
   Pages.reports = async ({ silent } = {}) => {
     const [traffic, revenue, summary] = await Promise.all([
@@ -1276,42 +987,8 @@
       : emptyState('chartPie', t('common.empty'));
   };
 
-  /* ---------------------------------------------------------------- health */
-  Pages.health = async () => {
-    const report = await api('/health');
-    const tone = report.status === 'ok' ? 'ok' : report.status === 'degraded' ? 'warn' : 'danger';
-    $('#health-cards').innerHTML = `
-      <div class="card">
-        <div class="card-head"><i data-icon="activity"></i><h3>${t('health.overall')}</h3></div>
-        <div style="font-size:24px;font-weight:700">${badge(report.status)}</div>
-        <div class="sep"></div>
-        <dl class="kv">
-          <dt>${t('health.version')}</dt><dd>${esc(report.version)}</dd>
-          <dt>${t('health.environment')}</dt><dd>${esc(report.environment)}</dd>
-          <dt>${t('health.uptime')}</dt><dd>${relative(new Date(Date.now() - report.uptime_seconds * 1000))}</dd>
-          <dt>${t('dashboard.nodes')}</dt><dd>${num(report.nodes_online)}/${num(report.nodes_total)}</dd>
-        </dl>
-      </div>
-      <div class="card">
-        <div class="card-head"><i data-icon="cpu"></i><h3>${t('health.components')}</h3></div>
-        ${report.components.map((c) => {
-          const key = `health.component.${c.name}`;
-          return `<div class="list-row">
-            ${badge(c.status)}
-            <div class="grow"><div class="title">${esc(t(key) === key ? c.name : t(key))}</div>
-            <div class="meta mono">${esc(c.detail || '')}${c.latency_ms != null ? ` · ${num(c.latency_ms)} ms` : ''}</div></div>
-          </div>`;
-        }).join('')}
-      </div>`;
-    window.hydrateIcons($('#health-cards'));
-
-    const dot = $('#health-dot');
-    if (dot) dot.style.background = `var(--${tone === 'ok' ? 'ok' : tone === 'warn' ? 'warn' : 'danger'})`;
-    const label = $('#health-label');
-    if (label) label.textContent = `${num(report.nodes_online)}/${num(report.nodes_total)}`;
-  };
-
   /* ---------------------------------------------------------------- alerts */
+/* ---------------------------------------------------------------- alerts */
   Pages.alerts = async () => {
     const activeOnly = $('#alerts-active-only').checked;
     const table = $('#alerts-table');
@@ -1531,10 +1208,7 @@
     users: { icon: 'users', title: 'nav.users', staff: true },
     plans: { icon: 'tag', title: 'nav.plans' },
     payments: { icon: 'card', title: 'nav.payments', staff: true },
-    nodes: { icon: 'server', title: 'nav.nodes', staff: true },
-    inbounds: { icon: 'plug', title: 'nav.inbounds', staff: true },
     reports: { icon: 'chart', title: 'nav.reports' },
-    health: { icon: 'activity', title: 'nav.health', staff: true },
     alerts: { icon: 'bell', title: 'nav.alerts', staff: true },
     logs: { icon: 'scroll', title: 'nav.logs', staff: true },
     settings: { icon: 'sliders', title: 'nav.settings', staff: true },
@@ -1697,7 +1371,9 @@
     $('#me-name').textContent = state.me.username;
     $('#me-role').textContent = t(`status.${state.me.role}`);
     $('#me-avatar').textContent = state.me.username.slice(0, 1).toUpperCase();
-    if (location.hash && !PAGES[location.hash.replace('#/', '')]) {
+    if (['nodes', 'inbounds', 'health'].includes(location.hash.replace('#/', ''))) {
+      history.replaceState(null, '', `${location.pathname}#/configs`);
+    } else if (location.hash && !PAGES[location.hash.replace('#/', '')]) {
       history.replaceState(null, '', location.pathname);
     }
 
@@ -1711,7 +1387,7 @@
   async function refreshBadges() {
     try {
       const status = await api('/status');
-      $('#health-label').textContent = `${num(status.nodes_online)}/${num(status.nodes_total)}`;
+      $('#health-label').textContent = status.status;
       $('#env-badge').textContent = status.environment;
       const dot = $('#health-dot');
       if (dot) dot.style.background = `var(--${status.status === 'operational' ? 'ok' : 'warn'})`;
@@ -1803,7 +1479,11 @@
 
     $$('#nav .nav-item').forEach((el) => { el.onclick = () => navigate(el.dataset.page); });
     window.addEventListener('hashchange', () => {
-      const page = (location.hash || '').replace('#/', '');
+      let page = (location.hash || '').replace('#/', '');
+      if (['nodes', 'inbounds', 'health'].includes(page)) {
+        page = 'configs';
+        history.replaceState(null, '', `${location.pathname}#/configs`);
+      }
       if (PAGES[page] && page !== state.page) navigate(page, { push: false });
     });
     window.addEventListener('popstate', () => {
@@ -1881,11 +1561,6 @@
     $('#plan-create').onclick = () => planDialog(null);
     $('#pay-reload').onclick = () => Pages.payments();
     $('#pay-status').onchange = () => Pages.payments();
-    $('#node-create').onclick = nodeCreateDialog;
-    $('#node-railway-setup').onclick = railwayNodeDialog;
-    $('#inb-node').onchange = () => Pages.inbounds();
-    $('#inb-create').onclick = inboundCreateDialog;
-    $('#health-reload').onclick = () => Pages.health();
     $('#alerts-reload').onclick = () => Pages.alerts();
     $('#alerts-active-only').onchange = () => Pages.alerts();
     $('#log-reload').onclick = () => Pages.logs();

@@ -65,6 +65,8 @@ def _security_params(inbound: Inbound) -> dict[str, Any]:
         return params
 
     params: dict[str, Any] = {"security": inbound.security.value}
+    if inbound.transport == Transport.ws and inbound.host_header:
+        params["sni"] = inbound.host_header
     if inbound.security == Security.tls:
         params["sni"] = inbound.sni or inbound.display_host
         if inbound.alpn:
@@ -80,8 +82,6 @@ def _security_params(inbound: Inbound) -> dict[str, Any]:
         params["fp"] = inbound.fingerprint or "chrome"
         params["spx"] = inbound.reality_spider_x or "/"
         params["flow"] = inbound.flow or "xtls-rprx-vision"
-    elif inbound.transport == Transport.ws and inbound.host_header:
-        params["sni"] = inbound.host_header
     return params
 
 
@@ -96,11 +96,13 @@ def _remark(inbound: Inbound, service: Service) -> str:
 
 def _railway_ws_tls(inbound: Inbound) -> bool:
     return (
-        inbound.node.name.startswith("railway")
+        (inbound.node.name.startswith("railway") or ".railway.internal" in inbound.node.address)
         and inbound.transport == Transport.ws
         and inbound.security == Security.none
         and inbound.display_port == 443
         and bool((inbound.extra or {}).get("railway_ws_tls"))
+        and bool(inbound.public_host)
+        and inbound.public_host.lower().endswith(".up.railway.app")
     )
 
 
@@ -126,11 +128,11 @@ def build_vmess_link(inbound: Inbound, service: Service) -> str:
         "scy": "auto",
         "net": inbound.transport.value,
         "type": "none",
-        "host": inbound.host_header or "",
-        "path": inbound.path or "",
-        "tls": "tls" if inbound.security == Security.tls else "",
-        "sni": inbound.sni or "",
-        "alpn": ",".join(inbound.alpn) if inbound.alpn else "",
+        "host": inbound.host_header or (inbound.display_host if _railway_ws_tls(inbound) else ""),
+        "path": f"/ws{inbound.path or '/'}" if _railway_ws_tls(inbound) else (inbound.path or ""),
+        "tls": "tls" if inbound.security == Security.tls or _railway_ws_tls(inbound) else "",
+        "sni": (inbound.sni or inbound.display_host) if _railway_ws_tls(inbound) else (inbound.sni or ""),
+        "alpn": ",".join(inbound.alpn or (['http/1.1'] if _railway_ws_tls(inbound) else [])),
         "fp": inbound.fingerprint or "",
     }
     if inbound.transport == Transport.grpc:
@@ -248,14 +250,17 @@ def build_clash_yaml(services: list[Service]) -> str:
             proxy["network"] = inbound.transport.value
             opts: dict[str, Any] = {}
             if inbound.transport == Transport.ws:
-                opts = {"path": inbound.path or "/", "headers": {"Host": inbound.host_header or inbound.display_host}}
+                ws_path = inbound.path or "/"
+                if _railway_ws_tls(inbound):
+                    ws_path = f"/ws{ws_path}"
+                opts = {"path": ws_path, "headers": {"Host": inbound.host_header or inbound.display_host}}
             elif inbound.transport == Transport.grpc:
                 opts = {"grpc-service-name": inbound.service_name or "grpc"}
             proxy[inbound.transport.value + "-opts"] = opts
 
         if inbound.security == Security.tls or _railway_ws_tls(inbound):
             proxy["tls"] = True
-            proxy["servername"] = inbound.sni or inbound.display_host
+            proxy["servername"] = inbound.display_host if _railway_ws_tls(inbound) else (inbound.sni or inbound.display_host)
             if inbound.alpn and not _railway_ws_tls(inbound):
                 proxy["alpn"] = list(inbound.alpn)
         elif inbound.security == Security.reality:

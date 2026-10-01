@@ -56,9 +56,9 @@ def dashboard(db: DbSession, user: CurrentUser) -> DashboardStats:
                 Service.expires_at <= now + timedelta(days=7),
             )
         ).scalar_one()
-        nodes_total = db.execute(select(func.count(Node.id))).scalar_one()
+        nodes_total = db.execute(select(func.count(Node.id)).where(Node.is_active.is_(True))).scalar_one()
         nodes_online = db.execute(
-            select(func.count(Node.id)).where(Node.status == NodeStatus.online)
+            select(func.count(Node.id)).where(Node.is_active.is_(True), Node.status == NodeStatus.online)
         ).scalar_one()
         traffic_today = db.execute(
             select(func.coalesce(func.sum(TrafficDaily.up_bytes + TrafficDaily.down_bytes), 0)).where(

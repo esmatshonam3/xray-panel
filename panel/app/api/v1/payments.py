@@ -65,10 +65,18 @@ def create(payload: PaymentCreate, db: DbSession, user: CurrentUser) -> PaymentO
     service = db.get(Service, payload.service_id) if payload.service_id else None
     if service and service.user_id != user.id and not user.is_staff:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your service")
+    if payload.purpose == "renewal" and service is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Renewal requires a service")
+    if payload.purpose == "purchase" and service is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Purchase cannot target an existing service")
+    if payload.node_id and payload.purpose == "purchase":
+        from app.services.provisioning import eligible_inbounds
 
+        if not eligible_inbounds(db, plan, node_id=payload.node_id):
+            raise HTTPException(status.HTTP_409_CONFLICT, "No endpoint on the selected location matches this plan")
     try:
         if payload.method.value == "balance":
-            payment = pay_from_balance(db, user=user, plan=plan, service=service)
+            payment = pay_from_balance(db, user=user, plan=plan, service=service, node_id=payload.node_id)
         else:
             payment = create_order(
                 db,
@@ -77,6 +85,7 @@ def create(payload: PaymentCreate, db: DbSession, user: CurrentUser) -> PaymentO
                 method=payload.method,
                 purpose=payload.purpose,
                 service=service,
+                node_id=payload.node_id,
                 receipt_url=payload.receipt_url,
             )
     except BillingError as exc:
