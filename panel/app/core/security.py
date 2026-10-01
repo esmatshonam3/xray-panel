@@ -143,14 +143,17 @@ def decrypt(ciphertext: str) -> str:
         token = ciphertext.encode("ascii")
     except (AttributeError, UnicodeEncodeError):
         return ""
+    keys = []
     if settings.encryption_key:
-        keys = [settings.encryption_key.strip()]
-        keys.extend(key.strip() for key in settings.legacy_encryption_keys.split(",") if key.strip())
-    else:
-        keys = []
-        for secret_key in secret_key_candidates():
-            digest = hashlib.sha256(f"xpanel:{secret_key}".encode("utf-8")).digest()
-            keys.append(base64.urlsafe_b64encode(digest).decode("ascii"))
+        keys.append(settings.encryption_key.strip())
+    keys.extend(key.strip() for key in settings.legacy_encryption_keys.split(",") if key.strip())
+    # _fernet() falls back to a deterministic SECRET_KEY-derived Fernet key
+    # when ENCRYPTION_KEY is missing or malformed. Always try those same keys
+    # after the explicitly configured keys, or encrypted values become
+    # undecryptable as soon as an invalid ENCRYPTION_KEY is present.
+    for secret_key in secret_key_candidates():
+        digest = hashlib.sha256(f"xpanel:{secret_key}".encode("utf-8")).digest()
+        keys.append(base64.urlsafe_b64encode(digest).decode("ascii"))
     for raw_key in dict.fromkeys(keys):
         try:
             key = raw_key.encode("ascii")
