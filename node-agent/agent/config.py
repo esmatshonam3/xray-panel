@@ -22,7 +22,7 @@ class AgentSettings(BaseSettings):
     xray_state_path: str = "/etc/xray/state.json"
     xray_api_port: int = 10085
     xray_api_host: str = "127.0.0.1"
-    xray_log_path: str = "/var/log/xray/access.log"
+    xray_log_path: str = "/etc/xray/access.log"
     xray_log_level: str = "warning"
 
     agent_port: int = 8081

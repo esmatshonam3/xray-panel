@@ -82,6 +82,8 @@ class XrayManager:
                 inbounds.append(inbound)
 
         return {
+            # Railway containers do not guarantee /var/log exists. Keep logs
+            # beside the persisted Xray state so the core can always start.
             "log": {"loglevel": settings.xray_log_level, "access": settings.xray_log_path, "error": ""},
             "api": {"tag": "api", "services": ["HandlerService", "LoggerService", "StatsService"]},
             "stats": {},
