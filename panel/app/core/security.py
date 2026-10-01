@@ -12,7 +12,7 @@ import bcrypt
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.core.config import settings
+from app.core.config import secret_key_candidates, settings
 
 # --------------------------------------------------------------------------- #
 #  Password hashing (bcrypt, cost 12)
@@ -140,9 +140,24 @@ def encrypt(plaintext: str) -> str:
 
 def decrypt(ciphertext: str) -> str:
     try:
-        return _fernet().decrypt(ciphertext.encode("ascii")).decode("utf-8")
-    except (InvalidToken, ValueError):
+        token = ciphertext.encode("ascii")
+    except (AttributeError, UnicodeEncodeError):
         return ""
+    if settings.encryption_key:
+        keys = [settings.encryption_key.strip()]
+        keys.extend(key.strip() for key in settings.legacy_encryption_keys.split(",") if key.strip())
+    else:
+        keys = []
+        for secret_key in secret_key_candidates():
+            digest = hashlib.sha256(f"xpanel:{secret_key}".encode("utf-8")).digest()
+            keys.append(base64.urlsafe_b64encode(digest).decode("ascii"))
+    for raw_key in dict.fromkeys(keys):
+        try:
+            key = raw_key.encode("ascii")
+            return Fernet(key).decrypt(token).decode("utf-8")
+        except (InvalidToken, ValueError, UnicodeDecodeError):
+            continue
+    return ""
 
 
 def mask(value: Optional[str], keep: int = 4) -> str:

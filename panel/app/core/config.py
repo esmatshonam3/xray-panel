@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
 
 from pydantic import Field
@@ -31,7 +32,9 @@ class Settings(BaseSettings):
 
     # --------------------------------------------------------------- security
     secret_key: str = "CHANGE_ME_please_generate_a_long_random_string_64_chars"
+    legacy_secret_keys: str = ""
     encryption_key: Optional[str] = None
+    legacy_encryption_keys: str = ""
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 720
     refresh_token_ttl_days: int = 30
@@ -172,3 +175,24 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+def secret_key_candidates() -> list[str]:
+    """Keys that can decrypt existing rows across Railway SQLite restarts."""
+    keys = [settings.secret_key] if settings.secret_key else []
+    keys.extend(key.strip() for key in settings.legacy_secret_keys.split(",") if key.strip())
+    if settings.is_sqlite:
+        db_path = settings.sqlalchemy_url.partition("///")[2]
+        if db_path and db_path != ":memory:":
+            marker = Path(db_path).expanduser().parent / ".xpanel-encryption-key"
+            try:
+                if marker.exists():
+                    previous = marker.read_text(encoding="utf-8").strip()
+                    if previous:
+                        keys.append(previous)
+                else:
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(settings.secret_key, encoding="utf-8")
+            except OSError:
+                pass
+    return list(dict.fromkeys(keys))
