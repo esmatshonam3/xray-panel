@@ -56,6 +56,8 @@ def eligible_inbounds(
         stmt = stmt.where(Inbound.id == inbound_id)
     if node_id:
         stmt = stmt.where(Inbound.node_id == node_id)
+    if settings.live_proxy_enabled:
+        stmt = stmt.join(Node, Inbound.node_id == Node.id).where(Node.name == "panel-websocket-relay")
     if plan:
         if plan.inbound_ids and not settings.live_proxy_enabled:
             stmt = stmt.where(Inbound.id.in_(plan.inbound_ids))

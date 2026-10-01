@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import func, or_, select
 
 from app.api.deps import AdminUser, CurrentUser, DbSession, Paging, StaffUser
-from app.db.models import Inbound, Plan, Service, ServiceStatus, User
+from app.db.models import Inbound, Node, Plan, Service, ServiceStatus, User
 from app.schemas import (
     Message,
     Page,
@@ -112,6 +112,10 @@ def list_services(
         stmt = stmt.where(Service.status == status_filter)
     if node_id:
         stmt = stmt.where(Service.node_id == node_id)
+    if settings.live_proxy_enabled and user.is_staff:
+        stmt = stmt.join(Inbound, Service.inbound_id == Inbound.id).join(Node, Inbound.node_id == Node.id).where(
+            Node.name == "panel-websocket-relay"
+        )
     if user_id and user.is_staff:
         stmt = stmt.where(Service.user_id == user_id)
     if paging.q:

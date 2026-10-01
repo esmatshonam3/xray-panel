@@ -128,6 +128,7 @@ def build_vless_link(inbound: Inbound, service: Service) -> str:
     if _railway_ws_tls(inbound):
         params["path"] = f"{settings.live_proxy_path_prefix.rstrip('/')}/{service.uuid}"
         params["host"] = _live_proxy_host(inbound)
+        params["security"] = "tls"
         return (
             f"vless://{service.uuid}@{_live_proxy_host(inbound)}:{_live_proxy_port(inbound)}"
             f"?{_qs(params)}#{quote(_remark(inbound, service))}"
@@ -223,7 +224,7 @@ def _share_json(service: Service) -> dict[str, Any]:
         "port": _live_proxy_port(inbound) if _railway_ws_tls(inbound) else inbound.display_port,
         "id": service.uuid,
         "transport": inbound.transport.value,
-        "security": inbound.security.value,
+        "security": "tls" if _railway_ws_tls(inbound) else inbound.security.value,
         "sni": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.sni,
         "path": f"{settings.live_proxy_path_prefix.rstrip('/')}/{service.uuid}" if _railway_ws_tls(inbound) else inbound.path,
         "host": _live_proxy_host(inbound) if _railway_ws_tls(inbound) else inbound.host_header,

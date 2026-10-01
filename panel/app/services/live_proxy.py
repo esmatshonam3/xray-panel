@@ -370,24 +370,25 @@ def ensure_default_relay_endpoint(db) -> None:
         db.flush()
     # Preserve existing customer IDs/subscription tokens while switching
     # eligible services to the new in-process VLESS/WS endpoint.
-    old_inbounds = list(
-        db.execute(
-            select(Inbound).where(
-                Inbound.protocol == Protocol.vless,
-                Inbound.transport == Transport.ws,
-                Inbound.id != inbound.id,
-            )
-        ).scalars()
-    )
-    for old in old_inbounds:
-        if old.node_id == node.id:
-            continue
-        services = list(db.execute(select(Service).where(Service.inbound_id == old.id)).scalars())
-        for service in services:
-            service.node_id = node.id
-            service.inbound_id = inbound.id
-            service.protocol = Protocol.vless
-            service.flow = None
+    old_nodes = list(db.execute(select(Node).where(Node.id != node.id)).scalars())
+    for old_node in old_nodes:
+        old_inbounds = list(
+            db.execute(
+                select(Inbound).where(
+                    Inbound.node_id == old_node.id,
+                    Inbound.protocol == Protocol.vless,
+                )
+            ).scalars()
+        )
+        for old in old_inbounds:
+            services = list(db.execute(select(Service).where(Service.inbound_id == old.id)).scalars())
+            for service in services:
+                service.node_id = node.id
+                service.inbound_id = inbound.id
+                service.protocol = Protocol.vless
+                service.flow = None
+            if services:
+                old.is_active = False
     from app.db.models import Plan
     for plan in db.execute(select(Plan)).scalars():
         plan.inbound_ids = [inbound.id]
