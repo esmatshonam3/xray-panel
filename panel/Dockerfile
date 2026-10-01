@@ -12,7 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates tini \
+ && apt-get install -y --no-install-recommends curl ca-certificates tini gosu \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -24,7 +24,8 @@ COPY . .
 RUN useradd --create-home --uid 10001 panel \
  && mkdir -p /app/data/backups /app/logs \
  && chown -R panel:panel /app
-USER panel
+# Start as root only long enough for entrypoint.sh to fix ownership on Railway
+# volumes, then drop privileges to the dedicated panel user before app startup.
 
 ENV PORT=8000 \
     WEB_CONCURRENCY=1 \
