@@ -56,7 +56,9 @@ class XrayManager:
     def _save_state(self) -> None:
         path = Path(settings.xray_state_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
+        # Xray selects the config parser from the file extension. Keep the
+        # temporary file JSON-suffixed so `xray run -test` parses it correctly.
+        tmp = path.with_suffix(".tmp.json")
         tmp.write_text(json.dumps(self._state, indent=2), "utf-8")
         tmp.replace(path)
 
