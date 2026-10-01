@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     panel_base_url: str = "http://localhost:8000"
+    railway_tcp_proxy_domain: Optional[str] = None
+    railway_tcp_proxy_port: Optional[int] = None
+    railway_node_token: Optional[str] = None
 
     # --------------------------------------------------------------- security
     secret_key: str = "CHANGE_ME_please_generate_a_long_random_string_64_chars"

@@ -180,7 +180,37 @@ http://<node-service-name>.railway.internal:8081
 را فقط با Basic-Auth/فایروال محافظت کنید. توجه کنید که TCP Proxy فقط یک پورت
 را expose می‌کند؛ برای هم ایجنت و هم Xray باید دو TCP Proxy جدا بسازید.
 
-### ۴.۴ افزودن نود در پنل
+### ۴.۳ اجرای Xray بدون VPS، روی Railway
+
+برای اجرای کامل پروژه فقط با Railway، یک سرویس دوم از همین مخزن بسازید؛ نیازی
+به سرور مجازی جدا نیست، اما دیتاپلین Xray باید جدا از وب‌سرویس پنل اجرا شود:
+
+1. در همان Railway project از **New → GitHub Repo** همین مخزن را اضافه کنید.
+   **Root Directory** را `node-agent` بگذارید و نام سرویس را دقیقاً
+   `node-agent` انتخاب کنید.
+2. یک متغیر مشترک و تصادفی با نام `NODE_TOKEN` بسازید؛ مقدار یکسان را روی هر
+   دو سرویس `node-agent` و `xray-panel` قرار دهید. در سرویس Agent مقدارهای
+   `NODE_NAME=node-agent` و `PUBLIC_HOST` را می‌توان حذف کرد.
+3. در تنظیمات پنل این متغیرها را اضافه کنید:
+   * `RAILWAY_NODE_TOKEN` = همان `NODE_TOKEN`
+   * `RAILWAY_TCP_PROXY_DOMAIN` = مقدار
+     `${{node-agent.RAILWAY_TCP_PROXY_DOMAIN}}`
+   * `RAILWAY_TCP_PROXY_PORT` = مقدار `${{node-agent.RAILWAY_TCP_PROXY_PORT}}`
+4. روی سرویس `node-agent` از **Settings → Networking → TCP Proxy** پورت داخلی
+   `443` را منتشر کنید. Xray روی همین پورت TCP گوش می‌دهد؛ برای UDP proxy یا
+   Reality روی transport TCP بمانید.
+5. یک Volume به سرویس `node-agent` با مسیر `/etc/xray` وصل کنید تا وضعیت Xray
+   بعد از redeploy حفظ شود. دو سرویس را deploy کنید.
+6. در پنل، **نودها → اتصال Xray روی Railway → ثبت Agent در پنل** را بزنید؛ سپس
+   در صفحه Inbounds یک inbound روی پورت داخلی `443` بسازید. دامنه و پورت عمومی
+   TCP Proxy به صورت خودکار به inbound داده می‌شود.
+
+Railway برای سرویس‌ها شبکه‌ی خصوصی داخلی و برای TCP Proxy دامنه و پورت عمومی
+می‌دهد. این بخش همچنان یک Agent لازم دارد، اما Agent در همان Railway اجرا
+می‌شود و VPS لازم نیست. [راهنمای شبکه خصوصی Railway](https://docs.railway.com/networking/private-networking)
+و [راهنمای TCP Proxy](https://docs.railway.com/networking/tcp-proxy) را ببینید.
+
+### ۴.۴ افزودن نود در پنل (تنظیم دستی)
 
 ```bash
 TOKEN=$(curl -sX POST $PANEL/api/v1/auth/login \

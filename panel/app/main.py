@@ -147,7 +147,7 @@ def create_app() -> FastAPI:
         elif request.url.path.startswith("/assets/"):
             # Fingerprint-free static files: short cache so deploys propagate fast.
             response.headers.setdefault("Cache-Control", "public, max-age=600")
-        elif request.url.path in ("/", "/index.html"):
+        elif request.url.path in ("/", "/index.html", "/login", "/panel"):
             response.headers.setdefault("Cache-Control", "no-cache")
         if duration_ms > 2000:
             log.warning("slow request", extra={"path": request.url.path, "ms": duration_ms})
@@ -190,6 +190,8 @@ def create_app() -> FastAPI:
         app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
         @app.get("/", include_in_schema=False)
+        @app.get("/login", include_in_schema=False)
+        @app.get("/panel", include_in_schema=False)
         def index() -> FileResponse:
             return FileResponse(STATIC_DIR / "index.html")
 

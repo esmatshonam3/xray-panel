@@ -13,6 +13,9 @@
 <script>
 (function () {
   try {
+    if (window.location.pathname === '/login') {
+      document.documentElement.classList.add('login-route');
+    }
     var t = localStorage.getItem('xpanel.theme');
     if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', t);
@@ -277,6 +280,7 @@
       <section class="page" id="page-nodes">
         <div class="toolbar">
           <span class="spacer"></span>
+          <button class="btn sm" id="node-railway-setup" type="button" data-staff="1"><i data-icon="server" data-icon-size="15"></i><span data-i18n="nodes.railwaySetup">اتصال Agent روی Railway</span></button>
           <button class="btn primary sm" id="node-create"><i data-icon="plus" data-icon-size="15"></i><span data-i18n="nodes.add">افزودن نود</span></button>
         </div>
         <div class="grid cols-3 stagger" id="node-grid"></div>
@@ -514,6 +518,6 @@
 
 <script src="/assets/icons.js"></script>
 <script src="/assets/i18n.js"></script>
-<script src="/assets/app.js"></script>
+<script src="/assets/app.js?v=session-fix-1"></script>
 </body>
 </html>

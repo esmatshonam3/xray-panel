@@ -77,7 +77,7 @@
     }
     const res = await fetch(path.startsWith('http') ? path : API + path, opts);
 
-    if (res.status === 401 && state.refresh && !path.includes('/auth/refresh')) {
+    if (res.status === 401 && state.refresh && !path.includes('/auth/refresh') && !path.startsWith('/auth/')) {
       if (await tryRefresh()) return api(path, options);
       logout(t('login.sessionExpired'));
     }
@@ -604,19 +604,20 @@
   function createServiceDialog() {
     openModal(t('configs.createTitle'), `
       <div class="field-row">
-        <div><label class="field">${t('configs.userId')}</label><input id="cs-user" type="number"></div>
-        <div><label class="field">${t('configs.planId')} <span class="hint">${t('common.optional')}</span></label><input id="cs-plan" type="number"></div>
-        <div><label class="field">${t('configs.inboundId')} <span class="hint">${t('common.optional')}</span></label><input id="cs-inbound" type="number"></div>
+        <div><label class="field">${t('configs.user')}</label><select id="cs-user"><option value="">${t('common.loading')}</option></select></div>
+        <div><label class="field">${t('plans.title')} <span class="hint">${t('common.optional')}</span></label><select id="cs-plan"><option value="">${t('common.auto')}</option></select></div>
+        <div><label class="field">${t('inbounds.title')} <span class="hint">${t('common.optional')}</span></label><select id="cs-inbound"><option value="">${t('common.auto')}</option></select></div>
         <div><label class="field">${t('configs.label')}</label><input id="cs-label" placeholder="config"></div>
         <div><label class="field">${t('configs.durationDays')}</label><input id="cs-days" type="number"></div>
         <div><label class="field">${t('configs.trafficGb')}</label><input id="cs-gb" type="number"></div>
       </div>
-      <p style="color:var(--text-mute);font-size:12px;margin-block-start:12px">${esc(t('configs.autoSelectHint'))}</p>`,
+      <p id="cs-prereq" style="color:var(--text-mute);font-size:12px;margin-block-start:12px">${esc(t('configs.autoSelectHint'))}</p>`,
       [
         { label: t('common.cancel'), onClick: closeModal },
         {
           label: t('common.create'), kind: 'primary', icon: 'plus',
           onClick: async (btn) => {
+            if (!$('#cs-user').value) { toast(t('configs.selectUser'), 'err'); return; }
             btn.classList.add('loading');
             try {
               const s = await api('/services', {
@@ -635,6 +636,17 @@
           },
         },
       ]);
+    Promise.all([api('/users?size=100'), api('/plans?size=100&include_inactive=true'), api('/inbounds')]).then(([users, plans, inbounds]) => {
+      const userSelect = $('#cs-user');
+      const planSelect = $('#cs-plan');
+      const inboundSelect = $('#cs-inbound');
+      if (!userSelect) return;
+      users.items.forEach((u) => userSelect.insertAdjacentHTML('beforeend', `<option value="${u.id}">${esc(u.username)} · #${u.id}</option>`));
+      plans.items.forEach((p) => planSelect.insertAdjacentHTML('beforeend', `<option value="${p.id}">${esc(p.name)} · #${p.id}</option>`));
+      inbounds.forEach((i) => inboundSelect.insertAdjacentHTML('beforeend', `<option value="${i.id}">${esc(i.remark || i.tag)} · #${i.id}</option>`));
+      if (!users.items.length) $('#cs-prereq').textContent = t('configs.noUsers');
+      else if (!inbounds.length) $('#cs-prereq').textContent = t('configs.noInbounds');
+    }).catch((err) => { const hint = $('#cs-prereq'); if (hint) hint.textContent = err.message; });
   }
 
   /* ----------------------------------------------------------------- users */
@@ -835,15 +847,25 @@
       <label class="switch" style="margin-block-start:14px">
         <input type="checkbox" id="p-active" ${plan?.is_active !== false ? 'checked' : ''}><span class="track"></span>
         <span>${t('common.enabled')}</span>
+      </label>
+      <label class="switch" style="margin-block-start:14px">
+        <input type="checkbox" id="p-public" ${plan?.is_public !== false ? 'checked' : ''}><span class="track"></span>
+        <span>${t('plans.public')}</span>
       </label>`,
       [
         { label: t('common.cancel'), onClick: closeModal },
         {
           label: editing ? t('common.save') : t('common.create'), kind: 'primary', icon: 'save',
           onClick: async (btn) => {
+            const code = $('#p-code').value.trim();
+            const name = $('#p-name').value.trim();
+            if ((!editing && code.length < 2) || name.length < 2) {
+              toast(t('plans.validation'), 'err');
+              return;
+            }
             btn.classList.add('loading');
             const body = {
-              name: $('#p-name').value,
+              name,
               price: Number($('#p-price').value),
               currency: $('#p-cur').value,
               duration_days: Number($('#p-days').value),
@@ -853,10 +875,11 @@
               allowed_protocols: $('#p-proto').value.split(',').map((s) => s.trim()).filter(Boolean),
               features: $('#p-feat').value.split(',').map((s) => s.trim()).filter(Boolean),
               is_active: $('#p-active').checked,
+              is_public: $('#p-public').checked,
             };
             try {
               if (editing) await api(`/plans/${plan.id}`, { method: 'PATCH', body });
-              else await api('/plans', { method: 'POST', body: { ...body, code: $('#p-code').value } });
+              else await api('/plans', { method: 'POST', body: { ...body, code } });
               closeModal(); toast(t('plans.saved'), 'ok'); Pages.plans();
             } catch (err) { toast(err.message, 'err'); btn.classList.remove('loading'); }
           },
@@ -1009,7 +1032,8 @@
         <div><label class="field">${t('nodes.apiToken')}</label><input id="nn-token" placeholder="nd_..."></div>
         <div><label class="field">${t('nodes.maxServices')}</label><input id="nn-max" type="number" value="0"></div>
       </div>
-      <label class="field">${t('nodes.tags')}</label><input id="nn-tags" placeholder="eu,default">`,
+      <label class="field">${t('nodes.tags')}</label><input id="nn-tags" placeholder="eu,default">
+      <div id="nn-prereq" class="hint" style="display:block;margin-block-start:14px">${esc(t('nodes.railwayHint'))}</div>`,
       [
         { label: t('common.cancel'), onClick: closeModal },
         {
@@ -1022,7 +1046,7 @@
                 body: {
                   name: $('#nn-name').value,
                   region: $('#nn-region').value || null,
-                  address: $('#nn-address').value,
+                  address: $('#nn-address').value.trim(),
                   public_host: $('#nn-host').value,
                   api_token: $('#nn-token').value,
                   max_services: Number($('#nn-max').value),
@@ -1034,6 +1058,25 @@
           },
         },
       ]);
+    api('/status').then((status) => {
+      if (!status.nodes_total) return;
+      const hint = $('#nn-prereq');
+      if (hint) hint.textContent = t('nodes.railwayHint');
+    }).catch(() => {});
+  }
+
+  function railwayNodeDialog() {
+    openModal(t('nodes.railwaySetup'), `<p>${esc(t('nodes.railwayHint'))}</p>
+      <p style="margin-block-start:12px;color:var(--text-mute)">${esc(t('nodes.railwayVariables'))}</p>`, [
+      { label: t('common.cancel'), onClick: closeModal },
+      { label: t('nodes.railwayRegister'), kind: 'primary', icon: 'server', onClick: async (btn) => {
+        btn.classList.add('loading');
+        try {
+          await api('/nodes/railway', { method: 'POST' });
+          closeModal(); toast(t('nodes.railwayRegistered'), 'ok'); Pages.nodes();
+        } catch (err) { toast(err.message, 'err'); btn.classList.remove('loading'); }
+      } },
+    ]);
   }
 
   /* -------------------------------------------------------------- inbounds */
@@ -1097,7 +1140,7 @@
   function inboundCreateDialog() {
     openModal(t('inbounds.createTitle'), `
       <div class="field-row">
-        <div><label class="field">${t('common.node')} ID</label><input id="ni-node" type="number"></div>
+        <div><label class="field">${t('common.node')}</label><select id="ni-node"><option value="">${t('common.loading')}</option></select></div>
         <div><label class="field">${t('inbounds.tag')}</label><input id="ni-tag" placeholder="vless-reality"></div>
         <div><label class="field">${t('common.protocol')}</label><select id="ni-proto">
           <option>vless</option><option>vmess</option><option>trojan</option><option>shadowsocks</option></select></div>
@@ -1113,12 +1156,13 @@
         <div><label class="field">Reality private key</label><input id="ni-pvk"></div>
         <div><label class="field">Reality short id</label><input id="ni-sid"></div>
       </div>
-      <p style="color:var(--text-mute);font-size:12px;margin-block-start:12px">${esc(t('inbounds.realityKeysHint'))}</p>`,
+      <p id="ni-prereq" style="color:var(--text-mute);font-size:12px;margin-block-start:12px">${esc(t('inbounds.realityKeysHint'))}</p>`,
       [
         { label: t('common.cancel'), onClick: closeModal },
         {
           label: t('common.create'), kind: 'primary', icon: 'plus',
           onClick: async (btn) => {
+            if (!$('#ni-node').value) { toast(t('inbounds.noNodes'), 'err'); return; }
             btn.classList.add('loading');
             const net = $('#ni-net').value;
             const body = {
@@ -1143,6 +1187,17 @@
           },
         },
       ]);
+    api('/nodes?size=100').then((nodes) => {
+      const select = $('#ni-node');
+      if (!select) return;
+      select.innerHTML = `<option value="">${esc(t('common.select'))}</option>`;
+      nodes.items.forEach((n) => select.insertAdjacentHTML('beforeend', `<option value="${n.id}">${esc(n.name)} · #${n.id}</option>`));
+      if (!nodes.items.length) {
+        const hint = $('#ni-prereq');
+        hint.innerHTML = `${esc(t('inbounds.noNodes'))} <button type="button" class="btn sm" id="ni-add-node">${esc(t('nodes.add'))}</button>`;
+        $('#ni-add-node').onclick = () => { closeModal(); nodeCreateDialog(); };
+      }
+    }).catch((err) => { const hint = $('#ni-prereq'); if (hint) hint.textContent = err.message; });
   }
 
   /* --------------------------------------------------------------- reports */
@@ -1445,7 +1500,8 @@
     let meta = PAGES[page] || PAGES.dashboard;
     if (meta.staff && !isStaff()) { page = 'dashboard'; meta = PAGES.dashboard; }
     state.page = page;
-    if (push && location.hash !== `#/${page}`) history.replaceState(null, '', `#/${page}`);
+    if (location.pathname === '/login') return;
+    if (push && location.hash !== `#/${page}`) history.replaceState(null, '', `${location.pathname === '/' ? '/panel' : location.pathname}#/${page}`);
 
     $$('#nav .nav-item').forEach((el) => el.classList.toggle('active', el.dataset.page === page));
     $('#page-title').textContent = t(meta.title);
@@ -1579,17 +1635,26 @@
     state.token = ''; state.refresh = ''; state.me = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
+    document.documentElement.classList.add('login-route');
+    if (location.pathname !== '/login') history.replaceState(null, '', '/login');
     $('#app').hidden = true;
     $('#login').hidden = false;
     $('#login-msg').textContent = message || '';
   }
 
   async function enterApp() {
+    document.documentElement.classList.remove('login-route');
+    if (location.pathname === '/' || location.pathname === '/login') {
+      history.replaceState(null, '', `/panel${location.hash}`);
+    }
     $('#login').hidden = true;
     $('#app').hidden = false;
     $('#me-name').textContent = state.me.username;
     $('#me-role').textContent = t(`status.${state.me.role}`);
     $('#me-avatar').textContent = state.me.username.slice(0, 1).toUpperCase();
+    if (location.hash && !PAGES[location.hash.replace('#/', '')]) {
+      history.replaceState(null, '', location.pathname);
+    }
 
     $$('[data-staff]').forEach((el) => { el.hidden = !isStaff(); });
 
@@ -1696,6 +1761,21 @@
       const page = (location.hash || '').replace('#/', '');
       if (PAGES[page] && page !== state.page) navigate(page, { push: false });
     });
+    window.addEventListener('popstate', () => {
+      if (location.pathname === '/login') {
+        document.documentElement.classList.add('login-route');
+        $('#app').hidden = true;
+        $('#login').hidden = false;
+      } else if (state.token && !state.me) {
+        restoreSession();
+      } else if (state.me) {
+        document.documentElement.classList.remove('login-route');
+        $('#login').hidden = true;
+        $('#app').hidden = false;
+        const page = (location.hash || '').replace('#/', '');
+        if (PAGES[page]) navigate(page, { push: false });
+      }
+    });
 
     $('#modal-close').onclick = closeModal;
     $('#modal').onclick = (e) => { if (e.target.id === 'modal') closeModal(); };
@@ -1757,6 +1837,7 @@
     $('#pay-reload').onclick = () => Pages.payments();
     $('#pay-status').onchange = () => Pages.payments();
     $('#node-create').onclick = nodeCreateDialog;
+    $('#node-railway-setup').onclick = railwayNodeDialog;
     $('#inb-node').onchange = () => Pages.inbounds();
     $('#inb-create').onclick = inboundCreateDialog;
     $('#health-reload').onclick = () => Pages.health();
@@ -1863,13 +1944,44 @@
     wire();
     loadPublicStatus();
 
-    if (!state.token) return;
+    if (location.pathname === '/login') {
+      document.documentElement.classList.add('login-route');
+      $('#app').hidden = true;
+      $('#login').hidden = false;
+      return;
+    }
+
+    document.documentElement.classList.remove('login-route');
+    $('#login').hidden = true;
+    $('#app').hidden = false;
+    await restoreSession();
+  }
+
+  async function restoreSession() {
+    if (!state.token && !state.refresh) {
+      $('#app').hidden = true;
+      $('#login').hidden = false;
+      return;
+    }
     try {
+      if (!state.token || !await currentUserExists()) {
+        if (!state.refresh || !await tryRefresh()) {
+          logout();
+          return;
+        }
+      }
       state.me = await api('/auth/me');
       await enterApp();
     } catch {
       logout();
     }
+  }
+
+  async function currentUserExists() {
+    try {
+      const res = await fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${state.token}` } });
+      return res.ok;
+    } catch { return false; }
   }
 
   boot();

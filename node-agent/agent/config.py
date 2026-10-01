@@ -13,6 +13,8 @@ class AgentSettings(BaseSettings):
     node_name: str = "node-1"
     node_token: str = "CHANGE_ME_node_token"
     public_host: str = ""
+    railway_tcp_proxy_domain: str = ""
+    railway_tcp_proxy_port: int = 0
     log_level: str = "INFO"
 
     xray_bin: str = "/usr/local/bin/xray"

@@ -78,6 +78,39 @@ def create_node(payload: NodeCreate, db: DbSession, actor: AdminUser) -> NodeOut
     )
 
 
+@router.post("/railway", response_model=NodeOut, status_code=status.HTTP_201_CREATED)
+def create_railway_node(db: DbSession, actor: AdminUser) -> NodeOut:
+    """Register a node-agent running as a private service in this Railway project."""
+    if not settings.railway_tcp_proxy_domain or not settings.railway_tcp_proxy_port or not settings.railway_node_token:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Railway Node Agent is not configured. Set RAILWAY_TCP_PROXY_DOMAIN, RAILWAY_TCP_PROXY_PORT, and RAILWAY_NODE_TOKEN on the panel service.",
+        )
+    name = "railway-xray"
+    node = db.execute(select(Node).where(Node.name == name)).scalar_one_or_none()
+    if node is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Railway Xray node is already registered")
+    node = Node(
+        name=name,
+        address="http://node-agent.railway.internal:8081",
+        public_host=settings.railway_tcp_proxy_domain,
+        region="Railway",
+        tags=["railway", "default"],
+        is_active=True,
+        max_services=0,
+        status=NodeStatus.unknown,
+    )
+    node.api_token = settings.railway_node_token
+    db.add(node)
+    db.flush()
+    audit(db, action="node.create", actor_id=actor.id, entity_type="node", entity_id=node.id, meta={"name": node.name, "provider": "railway"})
+    db.commit()
+    health = NodeClient(node).health()
+    if health.ok:
+        node = _refresh_from_health(db, node, health)
+    return NodeOut.model_validate(node_to_out(node, service_count=0))
+
+
 @router.get("/{node_id}", response_model=NodeOut)
 def get_node(node_id: int, db: DbSession, _: StaffUser) -> NodeOut:
     node = _load_node(db, node_id)
@@ -248,6 +281,10 @@ def create_inbound(payload: InboundCreate, db: DbSession, actor: AdminUser) -> I
         raise HTTPException(status.HTTP_409_CONFLICT, "Inbound tag already used on this node")
 
     data = payload.model_dump(exclude={"reality_private_key", "ss_password"})
+    node = db.get(Node, payload.node_id)
+    if node.name == "railway-xray":
+        data["public_host"] = payload.public_host or settings.railway_tcp_proxy_domain or node.public_host
+        data["public_port"] = payload.public_port or settings.railway_tcp_proxy_port or payload.port
     inbound = Inbound(**data)
     if payload.reality_private_key:
         inbound.reality_private_key = payload.reality_private_key
