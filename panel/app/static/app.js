@@ -1106,7 +1106,7 @@
           <td><span class="chip mono">${esc(i.protocol)}</span></td>
           <td>${esc(i.transport)}</td>
           <td>${esc(i.security)}</td>
-          <td class="mono">${num(i.public_port || i.port)}</td>
+          <td class="mono" title="Internal Xray port: ${num(i.port)}">${num(i.public_port || i.port)}${i.public_port && i.public_port !== i.port ? ` <small style="color:var(--text-mute)">(internal ${num(i.port)})</small>` : ''}</td>
           <td>${num(i.service_count)}</td>
           <td>${i.is_active ? badge('active') : badge('disabled')}</td>
           <td><div class="cell-actions">

@@ -197,7 +197,7 @@ http://<node-service-name>.railway.internal:8081
      `${{node-agent.RAILWAY_TCP_PROXY_DOMAIN}}`
    * `RAILWAY_TCP_PROXY_PORT` = مقدار `${{node-agent.RAILWAY_TCP_PROXY_PORT}}`
 4. روی سرویس `node-agent` از **Settings → Networking → TCP Proxy** پورت داخلی
-   `443` را منتشر کنید. Xray روی همین پورت TCP گوش می‌دهد؛ برای UDP proxy یا
+   `443` را منتشر کنید. متغیر Railway `RAILWAY_TCP_PROXY_PORT` پورت عمومی TCP Proxy است و نباید به‌عنوان پورت داخلی Xray ذخیره شود؛ Xray روی همان `443` گوش می‌دهد. برای UDP proxy یا
    Reality روی transport TCP بمانید.
 5. یک Volume به سرویس `node-agent` با مسیر `/etc/xray` وصل کنید تا وضعیت Xray
    بعد از redeploy حفظ شود. دو سرویس را deploy کنید.

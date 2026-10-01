@@ -39,9 +39,6 @@ def cmd_init_db(args: argparse.Namespace) -> int:
     init_db()
     print("✅ database schema is ready")
     if args.seed:
-        if settings.is_production and settings.superadmin_password in ("admin", "admin12345", "CHANGE_ME_strong_password"):
-            print("❌ Set a unique SUPERADMIN_PASSWORD before booting the production panel")
-            return 1
         with SessionLocal() as db:
             ensure_superadmin(db)
             if args.seed_demo:

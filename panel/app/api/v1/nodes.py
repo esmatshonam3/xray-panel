@@ -283,8 +283,12 @@ def create_inbound(payload: InboundCreate, db: DbSession, actor: AdminUser) -> I
     data = payload.model_dump(exclude={"reality_private_key", "ss_password"})
     node = db.get(Node, payload.node_id)
     if node.name == "railway-xray":
-        data["public_host"] = payload.public_host or settings.railway_tcp_proxy_domain or node.public_host
+        # Railway's TCP proxy listens on an externally allocated port and
+        # forwards to the container's target port (the Xray inbound port).
+        # Do not replace the internal listen port with the proxy port.
         data["public_port"] = payload.public_port or settings.railway_tcp_proxy_port or payload.port
+        data["port"] = payload.port
+        data["public_host"] = payload.public_host or settings.railway_tcp_proxy_domain or node.public_host
     inbound = Inbound(**data)
     if payload.reality_private_key:
         inbound.reality_private_key = payload.reality_private_key
